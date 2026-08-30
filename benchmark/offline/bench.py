@@ -9,17 +9,18 @@ from minisgl.llm import LLM
 
 def main():
     seed(0)
-    num_seqs = 256
-    max_input_len = 1024
-    max_ouput_len = 1024
+    num_seqs = 64
+    max_input_len = 512
+    max_ouput_len = 256
 
     # align the hyperparameters
     llm = LLM(
-        "Qwen/Qwen3-0.6B",
+        "/root/autodl-tmp/models/models/Qwen--Qwen3.5-0.8B/snapshots/master",
         max_seq_len_override=4096,
-        max_extend_tokens=16384,
-        cuda_graph_max_bs=256,
+        max_extend_tokens=4096,
+        cuda_graph_max_bs=0,
         page_size=256,
+        memory_ratio=0.5,
     )
 
     prompt_token_ids = [

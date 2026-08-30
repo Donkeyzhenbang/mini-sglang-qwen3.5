@@ -31,9 +31,9 @@ async def main():
                 await asyncio.sleep(0)
             return result
 
-        TEST_BS = [64]
+        TEST_BS = [8, 16, 32]
         PORT = 1919
-        MAX_INPUT = 8192
+        MAX_INPUT = 4096
         # Create the async client
         async with OpenAI(base_url=f"http://127.0.0.1:{PORT}/v1", api_key="dummy") as client:
             MODEL = await get_model_name(client)
@@ -57,7 +57,7 @@ async def main():
                 raise e from e
 
             msgs = await gen_task
-            output_lengths = [random.randint(16, 1024) for _ in range(max(TEST_BS))]
+            output_lengths = [random.randint(16, 256) for _ in range(max(TEST_BS))]
             logger.info(f"Generated {len(msgs)} test messages")
 
             logger.info("Running benchmark...")
