@@ -1,0 +1,4 @@
+{"prompt":"Explain why KV caches speed up autoregressive decoding in three sentences.","max_new_tokens":32}
+{"prompt":"Explain why KV caches speed up autoregressive decoding in three sentences.","max_new_tokens":32}
+{"prompt":"Explain why KV caches speed up autoregressive decoding in three sentences. Then describe recurrent state caching.","max_new_tokens":48}
+{"prompt":"Write a Python function that returns the first n Fibonacci numbers.","max_new_tokens":64}

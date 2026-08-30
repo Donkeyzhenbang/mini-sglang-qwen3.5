@@ -1,4 +1,5 @@
 """Byte accounting shared by cache allocation and experimental scheduling."""
+
 from dataclasses import dataclass
 
 
@@ -15,6 +16,7 @@ class HybridMemoryLayout:
             if tp_size % n == 0:
                 return 1
             raise ValueError("Head count and tensor parallel size are incompatible")
+
         full = len(config.full_attention_layer_ids)
         linear = config.num_layers - full
         kv = 2 * full * heads(config.num_kv_heads) * config.head_dim * dtype_bytes
@@ -27,9 +29,16 @@ class HybridMemoryLayout:
         return cls(kv, state)
 
 
-def plan_kv_pages(*, available_bytes: int, page_size: int, layout: HybridMemoryLayout,
-                  slots: int, workspace_bytes: int, snapshot_bytes: int,
-                  override: int | None = None) -> int:
+def plan_kv_pages(
+    *,
+    available_bytes: int,
+    page_size: int,
+    layout: HybridMemoryLayout,
+    slots: int,
+    workspace_bytes: int,
+    snapshot_bytes: int,
+    override: int | None = None,
+) -> int:
     if min(available_bytes, page_size, slots) <= 0 or min(workspace_bytes, snapshot_bytes) < 0:
         raise ValueError("Invalid memory budget")
     # Retained prefix states plus capture buffers from two overlapping batches.
@@ -40,6 +49,8 @@ def plan_kv_pages(*, available_bytes: int, page_size: int, layout: HybridMemoryL
     maximum = (available_bytes - reserve) // per_page - 1  # dummy KV page
     pages = maximum if override is None else override
     if pages < 2 or pages > maximum:
-        raise ValueError(f"KV budget exhausted: requested={pages}, maximum={maximum}; "
-                         "reduce running requests, context, snapshots or workspace")
+        raise ValueError(
+            f"KV budget exhausted: requested={pages}, maximum={maximum}; "
+            "reduce running requests, context, snapshots or workspace"
+        )
     return pages

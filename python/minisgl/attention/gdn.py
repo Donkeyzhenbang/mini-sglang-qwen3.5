@@ -7,12 +7,14 @@ from typing import Dict, List
 import torch
 import torch.nn.functional as F
 from minisgl.core import Req, get_global_ctx
-from minisgl.kvcache import BaseCacheHandle
 from minisgl.kernel.triton.causal_conv1d import (
     PAD_SLOT_ID,
+)
+from minisgl.kernel.triton.causal_conv1d import (
     causal_conv1d_update as triton_causal_conv1d_update,
 )
 from minisgl.kernel.triton.gdn_decode import packed_decode as gdn_packed_decode
+from minisgl.kvcache import BaseCacheHandle
 
 from .base import BaseAttnBackend
 
@@ -36,8 +38,11 @@ class PrefixStateSnapshot:
 
     @property
     def nbytes(self) -> int:
-        return sum(t.numel() * t.element_size() for s in self.layers.values()
-                   for t in (s.conv_cache, s.ssm_cache))
+        return sum(
+            t.numel() * t.element_size()
+            for s in self.layers.values()
+            for t in (s.conv_cache, s.ssm_cache)
+        )
 
 
 class GDNAttnBackend:
@@ -47,9 +52,9 @@ class GDNAttnBackend:
         self._runtime: Dict[int, _LayerRuntime] = {}
         self._capture_active_bs: int | None = None
         self._capture_state_indices_i32: Dict[int, torch.Tensor] = {}
-        self._prefix_state_cache: weakref.WeakKeyDictionary[
-            object, PrefixStateSnapshot
-        ] = weakref.WeakKeyDictionary()
+        self._prefix_state_cache: weakref.WeakKeyDictionary[object, PrefixStateSnapshot] = (
+            weakref.WeakKeyDictionary()
+        )
         self.prefix_state_budget_bytes = 256 << 20
         self.extend_backend = "recurrent"
         self._pending_resets: set[int] = set()
@@ -75,27 +80,37 @@ class GDNAttnBackend:
             length = req.device_len
             if length % page_size or not req.can_decode:
                 continue
-            size = sum(t[req.table_idx].numel() * t.element_size()
-                       for rt in self._runtime.values() for t in (rt.conv_cache, rt.ssm_cache))
+            size = sum(
+                t[req.table_idx].numel() * t.element_size()
+                for rt in self._runtime.values()
+                for t in (rt.conv_cache, rt.ssm_cache)
+            )
             if size > budget:
                 continue
             budget -= size
-            batch.prefix_states[req] = PrefixStateSnapshot(length, {
-                lid: _LayerStateSnapshot(rt.conv_cache[req.table_idx].clone(),
-                                         rt.ssm_cache[req.table_idx].clone())
-                for lid, rt in self._runtime.items()
-            })
+            batch.prefix_states[req] = PrefixStateSnapshot(
+                length,
+                {
+                    lid: _LayerStateSnapshot(
+                        rt.conv_cache[req.table_idx].clone(), rt.ssm_cache[req.table_idx].clone()
+                    )
+                    for lid, rt in self._runtime.items()
+                },
+            )
 
-    def on_prefix_cache_store(self, req: Req, handle: BaseCacheHandle,
-                              snapshot: PrefixStateSnapshot | None = None) -> None:
+    def on_prefix_cache_store(
+        self, req: Req, handle: BaseCacheHandle, snapshot: PrefixStateSnapshot | None = None
+    ) -> None:
         node = self._get_prefix_node(handle)
         if node is None or snapshot is None or snapshot.state_len != handle.cached_len:
             return
         if snapshot.nbytes > self.prefix_state_budget_bytes:
             return
         self._prefix_state_cache.pop(node, None)
-        while (sum(s.nbytes for s in self._prefix_state_cache.values()) + snapshot.nbytes
-               > self.prefix_state_budget_bytes):
+        while (
+            sum(s.nbytes for s in self._prefix_state_cache.values()) + snapshot.nbytes
+            > self.prefix_state_budget_bytes
+        ):
             self._prefix_state_cache.pop(next(iter(self._prefix_state_cache)))
         self._prefix_state_cache[node] = snapshot
 
@@ -223,7 +238,9 @@ class GDNAttnBackend:
         state_i32 = self._capture_state_indices_i32.get(bs)
         reqs = getattr(batch, "padded_reqs", batch.reqs)
         if state_i32 is None:
-            state_i32 = torch.empty(bs, dtype=torch.int32, device=get_global_ctx().page_table.device)
+            state_i32 = torch.empty(
+                bs, dtype=torch.int32, device=get_global_ctx().page_table.device
+            )
             self._capture_state_indices_i32[bs] = state_i32
         for i, req in enumerate(reqs):
             state_i32[i] = req.table_idx
@@ -310,9 +327,7 @@ class GDNAttnBackend:
                 if hist_len == 1:
                     updated_hist = mixed_qkv.unsqueeze(-1)
                 else:
-                    updated_hist = torch.cat(
-                        [conv_hist[:, :, 1:], mixed_qkv.unsqueeze(-1)], dim=-1
-                    )
+                    updated_hist = torch.cat([conv_hist[:, :, 1:], mixed_qkv.unsqueeze(-1)], dim=-1)
                 rt.conv_cache.index_copy_(0, slots, updated_hist)
             return out
 
@@ -417,11 +432,21 @@ class GDNAttnBackend:
             for length in lengths:
                 cu.append(cu[-1] + length)
             result = packed_extend(
-                conv_qkv.contiguous(), a.contiguous(), b.contiguous(),
-                layer.A_log.contiguous(), layer.dt_bias.contiguous(), rt.ssm_cache,
-                torch.tensor([req.table_idx for req in reqs], dtype=torch.int32, device=conv_qkv.device),
+                conv_qkv.contiguous(),
+                a.contiguous(),
+                b.contiguous(),
+                layer.A_log.contiguous(),
+                layer.dt_bias.contiguous(),
+                rt.ssm_cache,
+                torch.tensor(
+                    [req.table_idx for req in reqs], dtype=torch.int32, device=conv_qkv.device
+                ),
                 torch.tensor(cu, dtype=torch.int32, device=conv_qkv.device),
-                layer.num_q_heads, layer.num_v_heads, layer.head_k_dim, layer.head_v_dim)
+                layer.num_q_heads,
+                layer.num_v_heads,
+                layer.head_k_dim,
+                layer.head_v_dim,
+            )
             return result.unsqueeze(0)
         out = torch.empty(
             conv_qkv.shape[0],
@@ -528,8 +553,9 @@ class HybridLinearBackend(BaseAttnBackend):
     def has_prefix_cache_state(self, handle: BaseCacheHandle) -> bool:
         return self.gdn_backend.has_prefix_cache_state(handle)
 
-    def on_prefix_cache_store(self, req: Req, handle: BaseCacheHandle,
-                              snapshot: PrefixStateSnapshot | None = None) -> None:
+    def on_prefix_cache_store(
+        self, req: Req, handle: BaseCacheHandle, snapshot: PrefixStateSnapshot | None = None
+    ) -> None:
         self.gdn_backend.on_prefix_cache_store(req, handle, snapshot)
 
     def capture_prefix_states(self, batch) -> None:

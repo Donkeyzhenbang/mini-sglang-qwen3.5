@@ -1,0 +1,31 @@
+{
+  "date": "2026-08-30",
+  "environment": "CPU-only cloud instance",
+  "gpu_inference_validated": false,
+  "tests": {
+    "passed": 41,
+    "skipped_gpu": 2,
+    "command": "OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 python -B -m pytest tests/cpu tests/gpu -q -o addopts='' -p no:cacheprovider"
+  },
+  "syntax_files_checked": 122,
+  "static_checks": "ruff F,E9 passed; imports sorted and formatting applied",
+  "gpu_guard": "GPU_UNAVAILABLE exit observed; no benchmark artifact created",
+  "models": "4B target/draft configs pinned; full weights not downloaded",
+  "network": "Cloud Hugging Face metadata request timed out after 90 seconds; public configs fetched via local host and copied to cloud",
+  "python": "3.12.3",
+  "packages": {
+    "torch": "2.9.1",
+    "transformers": "4.57.3",
+    "flashinfer-python": "0.6.14",
+    "sgl-kernel": "0.3.21",
+    "pytest": "9.1.1",
+    "ruff": "0.16.5"
+  },
+  "limits": [
+    "No GPU logits parity",
+    "No measured speedup or TPOT",
+    "No INT4 loader or quantized GEMM",
+    "Single-request greedy experimental runner; no DFlash API serving",
+    "Lightweight custom tiered cache, not full SGLang HiCache"
+  ]
+}

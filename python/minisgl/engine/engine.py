@@ -13,7 +13,7 @@ from minisgl.layers import set_rope_device
 from minisgl.model_executor import ForwardBatch
 from minisgl.models import create_model, load_weight
 from minisgl.moe import create_moe_backend
-from minisgl.utils import div_even, init_logger, is_sm90_supported, is_sm100_supported, torch_dtype
+from minisgl.utils import init_logger, is_sm90_supported, is_sm100_supported, torch_dtype
 
 from .config import EngineConfig
 from .graph import GraphRunner, get_free_memory, mem_GB
@@ -80,7 +80,9 @@ class Engine:
             config.attention_backend, config.model_config
         )
         if hasattr(self.attn_backend, "gdn_backend"):
-            self.attn_backend.gdn_backend.prefix_state_budget_bytes = config.prefix_state_budget_bytes
+            self.attn_backend.gdn_backend.prefix_state_budget_bytes = (
+                config.prefix_state_budget_bytes
+            )
             if config.gdn_extend_backend not in ("recurrent", "packed"):
                 raise ValueError("Unknown GDN extend backend")
             self.attn_backend.gdn_backend.extend_backend = config.gdn_extend_backend
@@ -162,21 +164,31 @@ class Engine:
         if config.external_memory_bytes < 0:
             raise ValueError("External model reservation cannot be negative")
         new_free_memory = self._sync_get_memory()[0]
-        layout = HybridMemoryLayout.from_model(config.model_config, self.dtype.itemsize,
-                                               config.tp_info.size)
+        layout = HybridMemoryLayout.from_model(
+            config.model_config, self.dtype.itemsize, config.tp_info.size
+        )
         model_memory = old_free_memory - new_free_memory
         available_memory = int(config.memory_ratio * old_free_memory)
         if config.memory_budget_bytes is not None:
             available_memory = min(available_memory, config.memory_budget_bytes)
         available_memory -= model_memory + config.external_memory_bytes
-        snapshot_bytes = config.prefix_state_budget_bytes if config.model_config.has_linear_layers else 0
-        num_pages = plan_kv_pages(available_bytes=available_memory, page_size=config.page_size,
-            layout=layout, slots=config.max_running_req + 1,
-            workspace_bytes=config.runtime_workspace_bytes, snapshot_bytes=snapshot_bytes,
-            override=config.num_page_override)
+        snapshot_bytes = (
+            config.prefix_state_budget_bytes if config.model_config.has_linear_layers else 0
+        )
+        num_pages = plan_kv_pages(
+            available_bytes=available_memory,
+            page_size=config.page_size,
+            layout=layout,
+            slots=config.max_running_req + 1,
+            workspace_bytes=config.runtime_workspace_bytes,
+            snapshot_bytes=snapshot_bytes,
+            override=config.num_page_override,
+        )
         num_tokens = num_pages * config.page_size
         real_kv_size = num_tokens * layout.kv_bytes_per_token
-        logger.info(f"Hybrid state reserve: {mem_GB(layout.state_bytes_per_slot * (config.max_running_req + 1))}")
+        logger.info(
+            f"Hybrid state reserve: {mem_GB(layout.state_bytes_per_slot * (config.max_running_req + 1))}"
+        )
         logger.info(f"Allocating {num_tokens} tokens for KV cache, K + V = {mem_GB(real_kv_size)}")
         return num_pages
 
@@ -255,6 +267,7 @@ def _adjust_config(config: EngineConfig):
     if config.model_config.is_moe and config.moe_backend == "auto":
         override("moe_backend", "fused")
         logger.info_rank0(f"Auto-selected MoE backend: {config.moe_backend}")
+
 
 def _collect_attention_layers(model: Any) -> list[Any]:
     layers: list[Any] = []

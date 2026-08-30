@@ -4,19 +4,19 @@ Paged KV locations are reserved contiguously for one request. Rollback restores
 GDN state and logical length; speculative KV beyond that length is overwritten
 on replay. This path intentionally does not use the overlap scheduler or graphs.
 """
+
 from __future__ import annotations
 
 import time
 from dataclasses import dataclass
 
 import torch
-from torch.nn import functional as F
-
 from minisgl.compilation import set_forward_context
 from minisgl.core import Batch, Req, SamplingParams
 from minisgl.model_executor import ForwardBatch
 from minisgl.runtime.adaptive import JointMemoryBudget
 from minisgl.runtime.hybrid_cache import HybridPrefixCache
+from torch.nn import functional as F
 
 
 @dataclass
@@ -26,12 +26,21 @@ class TargetCheckpoint:
 
 
 class MiniSGLTarget:
-    def __init__(self, engine, *, capture_layer_ids=(), cache: HybridPrefixCache | None = None,
-                 budget_bytes=24 << 30, safety_bytes=256 << 20):
+    def __init__(
+        self,
+        engine,
+        *,
+        capture_layer_ids=(),
+        cache: HybridPrefixCache | None = None,
+        budget_bytes=24 << 30,
+        safety_bytes=256 << 20,
+    ):
         self.engine, self.device = engine, engine.device
         self.capture_layer_ids = tuple(capture_layer_ids)
-        if any(i < 0 or i >= len(engine.model.model.layers.op_list) - 1 for i in self.capture_layer_ids):
-            raise ValueError('Target taps must be non-final decoder layer outputs')
+        if any(
+            i < 0 or i >= len(engine.model.model.layers.op_list) - 1 for i in self.capture_layer_ids
+        ):
+            raise ValueError("Target taps must be non-final decoder layer outputs")
         self.gdn = engine.attn_backend.gdn_backend
         self.cache = cache
         self.history: list[int] = []
@@ -41,8 +50,9 @@ class MiniSGLTarget:
         self.embedding = engine.model.model.embed_tokens.weight
         head = engine.model.lm_head
         self.head = (head.tied_embedding or head).weight
-        engine.page_table[0, :engine.max_seq_len] = torch.arange(engine.max_seq_len,
-            dtype=torch.int32, device=self.device)
+        engine.page_table[0, : engine.max_seq_len] = torch.arange(
+            engine.max_seq_len, dtype=torch.int32, device=self.device
+        )
 
     @property
     def length(self):
@@ -54,20 +64,35 @@ class MiniSGLTarget:
     @torch.inference_mode()
     def _forward(self, tokens: list[int], *, prefill=False):
         if not tokens or self.length + len(tokens) > self.engine.max_seq_len:
-            raise ValueError('Input exceeds the reserved target context')
+            raise ValueError("Input exceeds the reserved target context")
         new_history = self.history + list(tokens)
-        req = Req(torch.tensor(new_history, dtype=torch.int32), 0, self.length,
-                  self.engine.max_seq_len - len(new_history), 0, SamplingParams(), None)
-        batch = Batch([req], 'prefill' if prefill else 'verify')
+        req = Req(
+            torch.tensor(new_history, dtype=torch.int32),
+            0,
+            self.length,
+            self.engine.max_seq_len - len(new_history),
+            0,
+            SamplingParams(),
+            None,
+        )
+        batch = Batch([req], "prefill" if prefill else "verify")
         batch.padded_reqs = batch.reqs
         batch.input_ids = torch.tensor(tokens, dtype=torch.int32, device=self.device)
-        batch.positions = torch.arange(self.length, len(new_history), dtype=torch.int32, device=self.device)
+        batch.positions = torch.arange(
+            self.length, len(new_history), dtype=torch.int32, device=self.device
+        )
         batch.out_loc = batch.positions
         with torch.cuda.stream(self.engine.stream):
             self.engine.attn_backend.prepare_metadata(batch)
-            with self.engine.ctx.forward_batch(batch), set_forward_context(
-                forward_batch=ForwardBatch.from_batch(batch, attn_backend=self.engine.attn_backend),
-                attention_layers=self.engine.attention_layers):
+            with (
+                self.engine.ctx.forward_batch(batch),
+                set_forward_context(
+                    forward_batch=ForwardBatch.from_batch(
+                        batch, attn_backend=self.engine.attn_backend
+                    ),
+                    attention_layers=self.engine.attention_layers,
+                ),
+            ):
                 hidden = self.engine.model.model.forward(batch.input_ids, self.capture_layer_ids)
                 features = self.engine.model.model._last_aux_hidden
                 self.engine.model.model._last_aux_hidden = None
@@ -76,32 +101,36 @@ class MiniSGLTarget:
         return logits, features
 
     def _kv_view(self, layer, kind):
-        t = self.engine.kv_cache.k_cache(layer) if kind == 'k' else self.engine.kv_cache.v_cache(layer)
+        t = (
+            self.engine.kv_cache.k_cache(layer)
+            if kind == "k"
+            else self.engine.kv_cache.v_cache(layer)
+        )
         return t.view(-1, t.shape[-2], t.shape[-1])
 
     def _prefix_payload(self, logits, features):
-        payload = {'last_logits': logits[-1:].detach()}
+        payload = {"last_logits": logits[-1:].detach()}
         if features is not None:
-            payload['features'] = features
+            payload["features"] = features
         for layer in self.engine.kv_cache._layer_mapping:
-            for kind in ('k', 'v'):
-                payload[f'{kind}.{layer}'] = self._kv_view(layer, kind)[:self.length]
+            for kind in ("k", "v"):
+                payload[f"{kind}.{layer}"] = self._kv_view(layer, kind)[: self.length]
         for layer, rt in self.gdn._runtime.items():
-            payload[f'conv.{layer}'] = rt.conv_cache[0]
-            payload[f'ssm.{layer}'] = rt.ssm_cache[0]
+            payload[f"conv.{layer}"] = rt.conv_cache[0]
+            payload[f"ssm.{layer}"] = rt.ssm_cache[0]
         return payload
 
     def _restore_prefix(self, entry):
         for name, source in entry.tensors.items():
-            if '.' not in name:
+            if "." not in name:
                 continue
-            kind, layer = name.split('.')
+            kind, layer = name.split(".")
             layer = int(layer)
-            if kind in ('k', 'v'):
-                self._kv_view(layer, kind)[:len(entry.tokens)].copy_(source)
-            elif kind == 'conv':
+            if kind in ("k", "v"):
+                self._kv_view(layer, kind)[: len(entry.tokens)].copy_(source)
+            elif kind == "conv":
                 self.gdn._runtime[layer].conv_cache[0].copy_(source)
-            elif kind == 'ssm':
+            elif kind == "ssm":
                 self.gdn._runtime[layer].ssm_cache[0].copy_(source)
         self.history = list(entry.tokens)
 
@@ -118,17 +147,20 @@ class MiniSGLTarget:
             if entry is not None:
                 restore_start = time.perf_counter()
                 self._restore_prefix(entry)
-                all_features = entry.tensors.get('features')
+                all_features = entry.tensors.get("features")
                 if all_features is not None:
                     all_features = all_features.to(self.device)
-                logits = entry.tensors['last_logits'].to(self.device)
+                logits = entry.tensors["last_logits"].to(self.device)
                 self.synchronize()
                 self.cache.record_restore(entry, (time.perf_counter() - restore_start) * 1000)
             if self.length < len(prompt):
-                logits, new_features = self._forward(prompt[self.length:], prefill=True)
+                logits, new_features = self._forward(prompt[self.length :], prefill=True)
                 if new_features is not None:
-                    all_features = (new_features if all_features is None else
-                                    torch.cat([all_features, new_features]))
+                    all_features = (
+                        new_features
+                        if all_features is None
+                        else torch.cat([all_features, new_features])
+                    )
             self.synchronize()
             cost_ms = (time.perf_counter() - start) * 1000
             if all_features is not None:
@@ -142,14 +174,18 @@ class MiniSGLTarget:
     @torch.inference_mode()
     def checkpoint(self):
         with torch.cuda.stream(self.engine.stream):
-            return TargetCheckpoint(list(self.history), {
-                lid: (rt.conv_cache[0].clone(), rt.ssm_cache[0].clone())
-                for lid, rt in self.gdn._runtime.items()})
+            return TargetCheckpoint(
+                list(self.history),
+                {
+                    lid: (rt.conv_cache[0].clone(), rt.ssm_cache[0].clone())
+                    for lid, rt in self.gdn._runtime.items()
+                },
+            )
 
     @torch.inference_mode()
     def restore(self, snapshot):
         if snapshot is None:
-            raise ValueError('Rollback requires a checkpoint')
+            raise ValueError("Rollback requires a checkpoint")
         with torch.cuda.stream(self.engine.stream):
             for lid, (conv, ssm) in snapshot.states.items():
                 self.gdn._runtime[lid].conv_cache[0].copy_(conv)
@@ -178,19 +214,26 @@ class MiniSGLTarget:
             reserved = torch.cuda.memory_reserved(self.device)
             free, _ = torch.cuda.mem_get_info(self.device)
             available = min(free + reserved - allocated, self.budget_bytes - allocated)
-            state_bytes = sum(t[0].numel() * t.element_size() for rt in self.gdn._runtime.values()
-                              for t in (rt.conv_cache, rt.ssm_cache))
+            state_bytes = sum(
+                t[0].numel() * t.element_size()
+                for rt in self.gdn._runtime.values()
+                for t in (rt.conv_cache, rt.ssm_cache)
+            )
             vocab, hidden = self.embedding.shape
             # Conservative workspace proxy; peak measurements must calibrate it.
             per_token = 8 * vocab + 32 * hidden * self.embedding.element_size() + 384 * context
             return JointMemoryBudget(self.budget_bytes, 0, self.safety_bytes).feasible_blocks(
-                blocks, live_bytes=max(0, self.budget_bytes - available),
-                bytes_per_block_token=per_token, checkpoint_bytes=state_bytes)
+                blocks,
+                live_bytes=max(0, self.budget_bytes - available),
+                bytes_per_block_token=per_token,
+                checkpoint_bytes=state_bytes,
+            )
+
         result = admission()
-        if self.cache and self.cache.used('gpu') and (not result or max(result) < max(blocks)):
-            released = self.cache.used('gpu')
+        if self.cache and self.cache.used("gpu") and (not result or max(result) < max(blocks)):
+            released = self.cache.used("gpu")
             self.cache.resize_gpu_budget(0)
             self.synchronize()
-            self.memory_events.append({'context': context, 'gpu_cache_released_bytes': released})
+            self.memory_events.append({"context": context, "gpu_cache_released_bytes": released})
             result = admission()
         return result

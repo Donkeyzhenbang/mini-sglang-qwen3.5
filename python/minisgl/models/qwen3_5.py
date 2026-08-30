@@ -7,6 +7,9 @@ import torch.nn.functional as F
 from minisgl.compilation import get_forward_context
 from minisgl.core import get_global_ctx
 from minisgl.distributed import get_tp_info
+from minisgl.kernel.triton.gdn_fused_proj import (
+    fused_qkvzba_split_reshape_cat_contiguous,
+)
 from minisgl.layers import (
     BaseOP,
     GemmaRMSNormFused,
@@ -14,12 +17,9 @@ from minisgl.layers import (
     LinearRowParallel,
     OPList,
     ParallelLMHead,
-    RMSNorm,
     RadixLinearAttention,
+    RMSNorm,
     VocabParallelEmbedding,
-)
-from minisgl.kernel.triton.gdn_fused_proj import (
-    fused_qkvzba_split_reshape_cat_contiguous,
 )
 from minisgl.utils import div_even, nvtx_annotate
 
@@ -289,7 +289,9 @@ class Qwen3_5Model(BaseOP):
             eps=config.rms_norm_eps,
         )
 
-    def forward(self, input_ids: torch.Tensor, capture_layer_ids: tuple[int, ...] = ()) -> torch.Tensor:
+    def forward(
+        self, input_ids: torch.Tensor, capture_layer_ids: tuple[int, ...] = ()
+    ) -> torch.Tensor:
         x = self.embed_tokens.forward(input_ids)
         residual: torch.Tensor | None = None
         features = {}
@@ -297,8 +299,11 @@ class Qwen3_5Model(BaseOP):
             x, residual = layer.forward(x, residual)
             if layer_id in capture_layer_ids:
                 features[layer_id] = (x + residual).clone()
-        self._last_aux_hidden = (torch.cat([features[i] for i in capture_layer_ids], dim=-1)
-                                 if capture_layer_ids else None)
+        self._last_aux_hidden = (
+            torch.cat([features[i] for i in capture_layer_ids], dim=-1)
+            if capture_layer_ids
+            else None
+        )
         return self.norm.forward(x, residual)[0]
 
 
