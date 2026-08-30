@@ -289,11 +289,16 @@ class Qwen3_5Model(BaseOP):
             eps=config.rms_norm_eps,
         )
 
-    def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
+    def forward(self, input_ids: torch.Tensor, capture_layer_ids: tuple[int, ...] = ()) -> torch.Tensor:
         x = self.embed_tokens.forward(input_ids)
         residual: torch.Tensor | None = None
-        for layer in self.layers.op_list:
+        features = {}
+        for layer_id, layer in enumerate(self.layers.op_list):
             x, residual = layer.forward(x, residual)
+            if layer_id in capture_layer_ids:
+                features[layer_id] = (x + residual).clone()
+        self._last_aux_hidden = (torch.cat([features[i] for i in capture_layer_ids], dim=-1)
+                                 if capture_layer_ids else None)
         return self.norm.forward(x, residual)[0]
 
 

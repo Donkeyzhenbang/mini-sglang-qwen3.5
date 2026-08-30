@@ -67,7 +67,7 @@ class HybridBackend(BaseAttnBackend):
             raise ValueError("forward_batch is required for attention dispatch.")
         backend = (
             self.prefill_backend
-            if forward_batch.forward_mode.is_prefill()
+            if not forward_batch.forward_mode.is_decode()
             else self.decode_backend
         )
         return backend.forward(
@@ -81,7 +81,7 @@ class HybridBackend(BaseAttnBackend):
         )
 
     def prepare_metadata(self, batch: Batch) -> None:
-        backend = self.prefill_backend if batch.is_prefill else self.decode_backend
+        backend = self.decode_backend if batch.is_decode else self.prefill_backend
         return backend.prepare_metadata(batch)
 
     def init_capture_graph(self, max_seq_len: int, bs_list: List[int]) -> None:

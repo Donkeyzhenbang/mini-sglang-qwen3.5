@@ -26,6 +26,9 @@ class EngineConfig:
     memory_ratio: float = 0.9
     runtime_workspace_bytes: int = 512 << 20
     prefix_state_budget_bytes: int = 256 << 20
+    external_memory_bytes: int = 0
+    memory_budget_bytes: int | None = None
+    gdn_extend_backend: str = "recurrent"
     distributed_timeout: float = 60.0
     use_dummy_weight: bool = False
     use_pynccl: bool = True

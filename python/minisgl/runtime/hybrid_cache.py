@@ -111,3 +111,9 @@ class HybridPrefixCache:
 
     def clear(self) -> None:
         self.entries.clear()
+
+    def record_restore(self, entry: CacheEntry, milliseconds: float) -> None:
+        if entry.tier == 'cpu' and milliseconds > 0:
+            observed = entry.nbytes / milliseconds
+            self.bandwidth = 0.8 * self.bandwidth + 0.2 * observed
+            self.stats['transfer_ms'] += milliseconds

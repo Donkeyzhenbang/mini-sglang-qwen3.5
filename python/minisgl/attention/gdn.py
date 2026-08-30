@@ -51,6 +51,7 @@ class GDNAttnBackend:
             object, PrefixStateSnapshot
         ] = weakref.WeakKeyDictionary()
         self.prefix_state_budget_bytes = 256 << 20
+        self.extend_backend = "recurrent"
         self._pending_resets: set[int] = set()
         self._pending_restores: Dict[int, PrefixStateSnapshot] = {}
 
@@ -408,6 +409,20 @@ class GDNAttnBackend:
 
         rt = self._ensure_runtime(layer, mixed_qkv)
         conv_qkv = self._apply_conv_batch(mixed_qkv, reqs, conv_weight, rt)
+        if self.extend_backend == "packed":
+            from minisgl.kernel.triton.gdn_extend import packed_extend
+
+            lengths = [req.extend_len for req in reqs]
+            cu = [0]
+            for length in lengths:
+                cu.append(cu[-1] + length)
+            result = packed_extend(
+                conv_qkv.contiguous(), a.contiguous(), b.contiguous(),
+                layer.A_log.contiguous(), layer.dt_bias.contiguous(), rt.ssm_cache,
+                torch.tensor([req.table_idx for req in reqs], dtype=torch.int32, device=conv_qkv.device),
+                torch.tensor(cu, dtype=torch.int32, device=conv_qkv.device),
+                layer.num_q_heads, layer.num_v_heads, layer.head_k_dim, layer.head_v_dim)
+            return result.unsqueeze(0)
         out = torch.empty(
             conv_qkv.shape[0],
             layer.num_v_heads,

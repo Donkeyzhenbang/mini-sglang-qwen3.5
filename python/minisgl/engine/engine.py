@@ -81,6 +81,9 @@ class Engine:
         )
         if hasattr(self.attn_backend, "gdn_backend"):
             self.attn_backend.gdn_backend.prefix_state_budget_bytes = config.prefix_state_budget_bytes
+            if config.gdn_extend_backend not in ("recurrent", "packed"):
+                raise ValueError("Unknown GDN extend backend")
+            self.attn_backend.gdn_backend.extend_backend = config.gdn_extend_backend
         if config.model_config.is_moe:
             self.ctx.moe_backend = self.moe_backend = create_moe_backend(config.moe_backend)
 
@@ -156,11 +159,16 @@ class Engine:
 
         if not 0 < config.memory_ratio <= 1:
             raise ValueError("memory_ratio must be in (0, 1]")
+        if config.external_memory_bytes < 0:
+            raise ValueError("External model reservation cannot be negative")
         new_free_memory = self._sync_get_memory()[0]
         layout = HybridMemoryLayout.from_model(config.model_config, self.dtype.itemsize,
                                                config.tp_info.size)
         model_memory = old_free_memory - new_free_memory
-        available_memory = int(config.memory_ratio * old_free_memory) - model_memory
+        available_memory = int(config.memory_ratio * old_free_memory)
+        if config.memory_budget_bytes is not None:
+            available_memory = min(available_memory, config.memory_budget_bytes)
+        available_memory -= model_memory + config.external_memory_bytes
         snapshot_bytes = config.prefix_state_budget_bytes if config.model_config.has_linear_layers else 0
         num_pages = plan_kv_pages(available_bytes=available_memory, page_size=config.page_size,
             layout=layout, slots=config.max_running_req + 1,

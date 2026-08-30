@@ -13,6 +13,7 @@ class ForwardMode(str, Enum):
     PREFILL = "prefill"
     DECODE = "decode"
     IDLE = "idle"
+    VERIFY = "verify"
 
     def is_prefill(self) -> bool:
         return self is ForwardMode.PREFILL
@@ -22,7 +23,10 @@ class ForwardMode(str, Enum):
 
     def is_extend(self) -> bool:
         # Keep naming aligned with sglang: both prefill/decode are extend-like.
-        return self in (ForwardMode.PREFILL, ForwardMode.DECODE)
+        return self in (ForwardMode.PREFILL, ForwardMode.DECODE, ForwardMode.VERIFY)
+
+    def is_verify(self) -> bool:
+        return self is ForwardMode.VERIFY
 
     def is_idle(self) -> bool:
         return self is ForwardMode.IDLE
