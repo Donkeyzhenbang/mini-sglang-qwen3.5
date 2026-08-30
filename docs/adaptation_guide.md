@@ -48,7 +48,7 @@ if compute_capability in (89, 90):
     ops_subdir = "sm90"
 ```
 
-> SM89 (Ada Lovelace) 与 SM90 (Hopper) 二进制兼容，SM90 内核可在 RTX 4090 上正常运行。
+> 更正（2026-08-30）：SM89 是 Ada，SM90 是 Hopper，不能直接互换 cubin。这个补丁只记录历史环境；能否运行取决于该目录的库是否包含适用 SM89 的 cubin/PTX，不能仅依据目录名判断。性能数据未在本轮 CPU 环境复测，不能外推 4B。
 
 ---
 
@@ -291,7 +291,7 @@ sgl_kernel 的加载 ≠ JIT 编译，而是 架构匹配 + 动态加载
 | Hopper | 9.0 | `sm90` | H100, H800 |
 | Blackwell | 10.0/12.0 | `sm100` | B100, B200 |
 
-> SM89 与 SM90 **二进制兼容**（同属 Hopper 世代），所以 RTX 4090 可以加载 `sm90` 目录内核。
+> 更正：SM89/Ada 和 SM90/Hopper 不具备上述二进制兼容性；需要检查 wheel 的实际编译目标，不应伪装 GPU 架构作为通用部署方法。
 
 ---
 
@@ -479,7 +479,7 @@ Qwen3.5 的显存占用高于同等参数量的标准 Transformer 模型：
 | PyTorch 开销 | ~1.5 GB | CUDA 分配器碎片 + 保留内存 |
 | **总计** | **~22-24 GB** | 刚好占满 RTX 4090 的 24GB |
 
-> ⚠️ **SSM Cache 是 Qwen3.5 特有的显存大户**：每层 GDN 需要维护 `[num_slots, num_v_heads, head_v_dim, head_k_dim]` 的 float32 状态矩阵。`num_slots = KV cache pages × page_size`，随 `memory_ratio` 线性增长。
+> 更正：`num_slots = max_running_req + 1`，不等于 KV token 数。降低 `memory_ratio` 只会腾出空间，不会缩小 GDN 状态池。TP=1、257 槽时，0.8B 的 conv+SSM 约 4.676 GiB，4B 约 12.330 GiB。上表为历史估计，不是分项实测数据。
 
 ---
 

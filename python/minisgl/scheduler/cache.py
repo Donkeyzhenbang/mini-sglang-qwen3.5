@@ -20,7 +20,7 @@ class CacheManager:
         page_table: torch.Tensor,
         type: str,
         disable_prefix_cache: bool = False,
-        on_prefix_cache_store: Callable[[Req, BaseCacheHandle], None] | None = None,
+        on_prefix_cache_store: Callable[[Req, BaseCacheHandle, object], None] | None = None,
         on_prefix_cache_match: Callable[[BaseCacheHandle, int], None] | None = None,
         prefix_state_checker: Callable[[BaseCacheHandle], bool] | None = None,
     ):
@@ -88,7 +88,7 @@ class CacheManager:
             allocated = self._page_to_token(self._allocate(needed_pages))
             _write_page_table(self.page_table, allocated, allocation_info, self.page_size)
 
-    def cache_req(self, req: Req, *, finished: bool) -> None:
+    def cache_req(self, req: Req, *, finished: bool, state_snapshot: object = None) -> None:
         if self.disable_prefix_cache:
             if finished:
                 page_indices = self.page_table[req.table_idx, : req.cached_len]
@@ -111,7 +111,7 @@ class CacheManager:
         old_handle = req.cache_handle
         cached_len, new_handle = self.prefix_cache.insert_prefix(insert_ids, page_indices)
         if not finished and self._on_prefix_cache_store is not None and new_handle.cached_len > 0:
-            self._on_prefix_cache_store(req, new_handle)
+            self._on_prefix_cache_store(req, new_handle, state_snapshot)
         # unlock until all operations on handle is done
         self.unlock(old_handle)
         # this part is already in the prefix cache, free it

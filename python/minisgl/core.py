@@ -82,6 +82,7 @@ class Batch:
     padded_reqs: List[Req] = field(init=False)
     # this field should be set by attention backend
     attn_metadata: BaseAttnMetadata = field(init=False)
+    prefix_states: Dict[Req, Any] = field(default_factory=dict)
 
     @property
     def is_prefill(self) -> bool:

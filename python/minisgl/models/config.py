@@ -51,6 +51,11 @@ class ModelConfig:
     def has_linear_layers(self) -> bool:
         return self.layer_types is not None and any(t == "linear_attention" for t in self.layer_types)
 
+    @property
+    def full_attention_layer_ids(self) -> list[int]:
+        return [i for i in range(self.num_layers)
+                if not self.layer_types or self.layer_types[i] != "linear_attention"]
+
     @classmethod
     def from_hf(cls, config: PretrainedConfig | dict) -> ModelConfig:
         def _get_attr(obj, attr: str):

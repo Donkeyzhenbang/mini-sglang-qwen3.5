@@ -54,23 +54,27 @@ def create_attention_backend(
     config: ModelConfig,
 ) -> BaseAttnBackend:
     validate_attn_backend(backend, allow_auto=False)
-    if "," in backend:
-        assert backend.count(",") == 1, "Only one comma is allowed in hybrid backend"
-        p_backend, d_backend = backend.split(",", 1)
-        if p_backend != d_backend:
-            logger.info(f"Using hybrid attention backend: prefill={p_backend}, decode={d_backend}")
-            p_backend = create_attention_backend(p_backend, config)
-            d_backend = create_attention_backend(d_backend, config)
-            return HybridBackend(p_backend, d_backend)
-        backend = p_backend  # both are the same, fall through to single backend
-        logger.warning(f"P/D attention backends are the same: {backend}, using single backend.")
-
-    ret = SUPPORTED_ATTENTION_BACKENDS[backend](config)
+    ret = _create_full_attention_backend(backend, config)
     if config.has_linear_layers:
         from .gdn import HybridLinearBackend
 
         return HybridLinearBackend(ret)
     return ret
+
+
+def _create_full_attention_backend(backend: str, config: ModelConfig) -> BaseAttnBackend:
+    if "," in backend:
+        assert backend.count(",") == 1, "Only one comma is allowed in hybrid backend"
+        p_backend, d_backend = backend.split(",", 1)
+        if p_backend != d_backend:
+            logger.info(f"Using hybrid attention backend: prefill={p_backend}, decode={d_backend}")
+            p_backend = _create_full_attention_backend(p_backend, config)
+            d_backend = _create_full_attention_backend(d_backend, config)
+            return HybridBackend(p_backend, d_backend)
+        backend = p_backend  # both are the same, fall through to single backend
+        logger.warning(f"P/D attention backends are the same: {backend}, using single backend.")
+
+    return SUPPORTED_ATTENTION_BACKENDS[backend](config)
 
 
 __all__ = [

@@ -29,6 +29,17 @@ class _LayerStateSnapshot:
     ssm_cache: torch.Tensor
 
 
+@dataclass
+class PrefixStateSnapshot:
+    state_len: int
+    layers: Dict[int, _LayerStateSnapshot]
+
+    @property
+    def nbytes(self) -> int:
+        return sum(t.numel() * t.element_size() for s in self.layers.values()
+                   for t in (s.conv_cache, s.ssm_cache))
+
+
 class GDNAttnBackend:
     """Backend executor for GDN linear attention path."""
 
@@ -37,8 +48,11 @@ class GDNAttnBackend:
         self._capture_active_bs: int | None = None
         self._capture_state_indices_i32: Dict[int, torch.Tensor] = {}
         self._prefix_state_cache: weakref.WeakKeyDictionary[
-            object, Dict[int, _LayerStateSnapshot]
+            object, PrefixStateSnapshot
         ] = weakref.WeakKeyDictionary()
+        self.prefix_state_budget_bytes = 256 << 20
+        self._pending_resets: set[int] = set()
+        self._pending_restores: Dict[int, PrefixStateSnapshot] = {}
 
     def _get_prefix_node(self, handle: BaseCacheHandle) -> object | None:
         return getattr(handle, "node", None)
@@ -47,32 +61,64 @@ class GDNAttnBackend:
         node = self._get_prefix_node(handle)
         if node is None:
             return True
-        return node in self._prefix_state_cache
+        state = self._prefix_state_cache.get(node)
+        return state is not None and state.state_len == handle.cached_len
 
-    def on_prefix_cache_store(self, req: Req, handle: BaseCacheHandle) -> None:
-        node = self._get_prefix_node(handle)
-        if node is None:
+    def capture_prefix_states(self, batch) -> None:
+        """Called on the engine stream before the next batch can mutate states."""
+        if not batch.is_prefill or not self._runtime:
             return
-        slot = req.table_idx
-        node_states: Dict[int, _LayerStateSnapshot] = {}
-        for layer_id, rt in self._runtime.items():
-            if slot < 0 or slot >= rt.ssm_cache.shape[0]:
+        budget = self.prefix_state_budget_bytes
+        page_size = get_global_ctx().page_size
+        for req in batch.reqs:
+            length = req.device_len
+            if length % page_size or not req.can_decode:
                 continue
-            node_states[layer_id] = _LayerStateSnapshot(
-                conv_cache=rt.conv_cache[slot].clone(),
-                ssm_cache=rt.ssm_cache[slot].clone(),
-            )
-        if node_states:
-            self._prefix_state_cache[node] = node_states
+            size = sum(t[req.table_idx].numel() * t.element_size()
+                       for rt in self._runtime.values() for t in (rt.conv_cache, rt.ssm_cache))
+            if size > budget:
+                continue
+            budget -= size
+            batch.prefix_states[req] = PrefixStateSnapshot(length, {
+                lid: _LayerStateSnapshot(rt.conv_cache[req.table_idx].clone(),
+                                         rt.ssm_cache[req.table_idx].clone())
+                for lid, rt in self._runtime.items()
+            })
+
+    def on_prefix_cache_store(self, req: Req, handle: BaseCacheHandle,
+                              snapshot: PrefixStateSnapshot | None = None) -> None:
+        node = self._get_prefix_node(handle)
+        if node is None or snapshot is None or snapshot.state_len != handle.cached_len:
+            return
+        if snapshot.nbytes > self.prefix_state_budget_bytes:
+            return
+        self._prefix_state_cache.pop(node, None)
+        while (sum(s.nbytes for s in self._prefix_state_cache.values()) + snapshot.nbytes
+               > self.prefix_state_budget_bytes):
+            self._prefix_state_cache.pop(next(iter(self._prefix_state_cache)))
+        self._prefix_state_cache[node] = snapshot
 
     def on_prefix_cache_match(self, handle: BaseCacheHandle, slot: int) -> None:
         node = self._get_prefix_node(handle)
         if node is None:
             return
-        node_states = self._prefix_state_cache.get(node)
-        if not node_states:
+        snapshot = self._prefix_state_cache.get(node)
+        if snapshot is None or snapshot.state_len != handle.cached_len:
             return
-        for layer_id, state in node_states.items():
+        self._pending_restores[slot] = snapshot
+
+    def prepare_state_slots(self) -> None:
+        """Run clears/restores on the model stream, never the scheduler stream."""
+        for slot in self._pending_resets:
+            for rt in self._runtime.values():
+                self._clear_slot_in_runtime(rt, slot)
+        self._pending_resets.clear()
+        for slot, snapshot in self._pending_restores.items():
+            self._restore_snapshot(snapshot, slot)
+        self._pending_restores.clear()
+
+    def _restore_snapshot(self, snapshot: PrefixStateSnapshot, slot: int) -> None:
+        for layer_id, state in snapshot.layers.items():
             rt = self._runtime.get(layer_id)
             if rt is None or slot < 0 or slot >= rt.ssm_cache.shape[0]:
                 continue
@@ -134,8 +180,8 @@ class GDNAttnBackend:
         rt.ssm_cache[slot].zero_()
 
     def on_table_slot_allocated(self, slot: int) -> None:
-        for rt in self._runtime.values():
-            self._clear_slot_in_runtime(rt, slot)
+        self._pending_resets.add(slot)
+        self._pending_restores.pop(slot, None)
 
     def _get_decode_state_indices(
         self,
@@ -467,8 +513,15 @@ class HybridLinearBackend(BaseAttnBackend):
     def has_prefix_cache_state(self, handle: BaseCacheHandle) -> bool:
         return self.gdn_backend.has_prefix_cache_state(handle)
 
-    def on_prefix_cache_store(self, req: Req, handle: BaseCacheHandle) -> None:
-        self.gdn_backend.on_prefix_cache_store(req, handle)
+    def on_prefix_cache_store(self, req: Req, handle: BaseCacheHandle,
+                              snapshot: PrefixStateSnapshot | None = None) -> None:
+        self.gdn_backend.on_prefix_cache_store(req, handle, snapshot)
+
+    def capture_prefix_states(self, batch) -> None:
+        self.gdn_backend.capture_prefix_states(batch)
+
+    def prepare_state_slots(self) -> None:
+        self.gdn_backend.prepare_state_slots()
 
     def on_prefix_cache_match(self, handle: BaseCacheHandle, slot: int) -> None:
         self.gdn_backend.on_prefix_cache_match(handle, slot)

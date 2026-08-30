@@ -24,6 +24,8 @@ class EngineConfig:
     cuda_graph_max_bs: int | None = None
     page_size: int = 1
     memory_ratio: float = 0.9
+    runtime_workspace_bytes: int = 512 << 20
+    prefix_state_budget_bytes: int = 256 << 20
     distributed_timeout: float = 60.0
     use_dummy_weight: bool = False
     use_pynccl: bool = True

@@ -44,7 +44,7 @@ class Engine:
         set_global_ctx(self.ctx)
 
         self.tp_cpu_group = self._init_communication(config)
-        init_free_memory = self._sync_get_memory()[1]
+        init_free_memory = self._sync_get_memory()[0]
         logger.info_rank0(f"Free memory before loading model: {mem_GB(init_free_memory)}")
 
         # ======================= Model initialization ========================
@@ -79,6 +79,8 @@ class Engine:
         self.ctx.attn_backend = self.attn_backend = create_attention_backend(
             config.attention_backend, config.model_config
         )
+        if hasattr(self.attn_backend, "gdn_backend"):
+            self.attn_backend.gdn_backend.prefix_state_budget_bytes = config.prefix_state_budget_bytes
         if config.model_config.is_moe:
             self.ctx.moe_backend = self.moe_backend = create_moe_backend(config.moe_backend)
 
@@ -150,24 +152,23 @@ class Engine:
             return {k: v.to(self.dtype) for k, v in load_weight(config.model_path, self.device)}
 
     def _determine_num_pages(self, old_free_memory: int, config: EngineConfig) -> int:
-        new_free_memory = self._sync_get_memory()[1]
-        cache_per_page = (
-            2  # key + value
-            * config.model_config.head_dim
-            * div_even(config.model_config.num_kv_heads, config.tp_info.size, allow_replicate=True)
-            * config.page_size
-            * self.dtype.itemsize
-            * config.model_config.num_layers
-        )
-        num_pages = config.num_page_override
-        if num_pages is None:
-            model_memory = old_free_memory - new_free_memory
-            available_memory = int(config.memory_ratio * old_free_memory) - model_memory
-            num_pages = available_memory // cache_per_page
+        from minisgl.runtime.memory import HybridMemoryLayout, plan_kv_pages
 
-        assert num_pages > 1, "Not enough memory for KV cache, try reducing --num-pages"
+        if not 0 < config.memory_ratio <= 1:
+            raise ValueError("memory_ratio must be in (0, 1]")
+        new_free_memory = self._sync_get_memory()[0]
+        layout = HybridMemoryLayout.from_model(config.model_config, self.dtype.itemsize,
+                                               config.tp_info.size)
+        model_memory = old_free_memory - new_free_memory
+        available_memory = int(config.memory_ratio * old_free_memory) - model_memory
+        snapshot_bytes = config.prefix_state_budget_bytes if config.model_config.has_linear_layers else 0
+        num_pages = plan_kv_pages(available_bytes=available_memory, page_size=config.page_size,
+            layout=layout, slots=config.max_running_req + 1,
+            workspace_bytes=config.runtime_workspace_bytes, snapshot_bytes=snapshot_bytes,
+            override=config.num_page_override)
         num_tokens = num_pages * config.page_size
-        real_kv_size = num_pages * cache_per_page
+        real_kv_size = num_tokens * layout.kv_bytes_per_token
+        logger.info(f"Hybrid state reserve: {mem_GB(layout.state_bytes_per_slot * (config.max_running_req + 1))}")
         logger.info(f"Allocating {num_tokens} tokens for KV cache, K + V = {mem_GB(real_kv_size)}")
         return num_pages
 
@@ -194,6 +195,8 @@ class Engine:
 
     def forward_batch(self, batch: Batch, args: BatchSamplingArgs) -> ForwardOutput:
         assert torch.cuda.current_stream() == self.stream
+        if hasattr(self.attn_backend, "prepare_state_slots"):
+            self.attn_backend.prepare_state_slots()
         with self.ctx.forward_batch(batch):
             forward_batch = ForwardBatch.from_batch(batch, attn_backend=self.attn_backend)
             forward_ctx = set_forward_context(
@@ -207,6 +210,8 @@ class Engine:
                 with forward_ctx:
                     logits = self.model.forward()
 
+        if hasattr(self.attn_backend, "capture_prefix_states"):
+            self.attn_backend.capture_prefix_states(batch)
         for req in batch.reqs:
             req.complete_one()
 

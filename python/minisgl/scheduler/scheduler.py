@@ -197,7 +197,9 @@ class Scheduler(SchedulerIOMixin):
                     self._free_req_resources(req)
                     new_finished_reqs.add(req)
                 elif batch.is_prefill:  # for prefill, non-chunk req, cache the prefix
-                    self.cache_manager.cache_req(req, finished=False)
+                    self.cache_manager.cache_req(
+                        req, finished=False, state_snapshot=batch.prefix_states.get(req)
+                    )
 
         self.finished_reqs = new_finished_reqs
         self.send_result(reply)
