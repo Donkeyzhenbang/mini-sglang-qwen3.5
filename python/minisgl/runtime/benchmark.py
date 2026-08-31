@@ -76,7 +76,7 @@ def main():
         "--verify-mode",
         choices=["parallel", "sequential"],
         default="parallel",
-        help="Sequential is a numerical-consistency oracle, not an acceleration path",
+        help="Sequential uses one-token forwards for diagnostics; no general BF16 parity guarantee",
     )
     p.add_argument("--warmup", type=int, default=1)
     p.add_argument("--seed", type=int, default=42)

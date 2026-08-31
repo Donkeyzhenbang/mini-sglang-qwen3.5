@@ -1,5 +1,9 @@
 # Four-request batching, readable answers and CUDA graphs
 
+Update: [full batched runtime](full_batch_runtime.md) now batches prefill and
+draft forwards too, and supports continuous offline slot refill. The initial
+measurements and execution description below document the earlier implementation.
+
 For draft acceptance rates (not cache hits), see [DFlash metrics](dflash_metrics.md).
 
 This is the experimental dense Qwen3.5 BF16 runtime, not the OpenAI service.

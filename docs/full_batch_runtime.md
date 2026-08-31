@@ -1,5 +1,8 @@
 # Batched Qwen3.5 / DFlash runtime
 
+Measured results and remaining correctness limits are recorded in
+[the validation report](full_batch_results_2026-08-31.md).
+
 The experimental CLI now batches **prefill suffixes, draft model forwards and
 target verification**. Cache lookup/restoration remains per request, while model
 execution shares a batch. Draft padding uses per-request absolute positions and
@@ -11,6 +14,13 @@ convolutions use a ragged Triton kernel (width 4), with BF16 rounding before SiL
 Checkpoint gathers and rollback scatters are batched per layer. Verification
 predictions transfer to the host once per batch; memory admission uses the longest
 active context and accounts for rollback scratch space.
+
+The GDN decode convolution now uses the same arithmetic convention as BF16
+prefill/verify: FP32 products and accumulation, rounding to input dtype before
+SiLU. An independent 32,768-element GPU fixture found 14,332 mismatches before
+this fix and exact equality afterwards. The generic convolution API retains its
+previous default; only the GDN call opts into this convention. This fixes a
+specific kernel inconsistency, not all BF16 shape-dependent model differences.
 
 `--continuous-batching` admits waiting requests into completed slots between
 rounds. It is an offline experimental scheduler, **not integration with the main
@@ -69,7 +79,12 @@ is unnecessary for speculative decoding itself.
 Correctness and performance comparisons must use identical tokenized workloads
 and output tokens. BF16 shape changes can change argmax near ties; the existing
 parallel/sequential numerical caveat still applies. Do not report speedups for
-token-mismatching runs. `--verify-mode sequential` is a diagnostic oracle.
+token-mismatching runs. `--verify-mode sequential` uses one-token forwards for
+diagnostics; it is not a general guarantee of identical tokens. Different active
+batch sizes during rollback/replay can still change BF16 arithmetic.
+The mixed 256-token workload still fails complete target-only parity in parallel
+mode. A separate probe producing target logits directly in FP32 did not fix all
+cases and was not merged. Do not describe this runtime as universally lossless.
 
 ```bash
 "$PY" -B -m pytest -o addopts='' tests/cpu tests/gpu -q

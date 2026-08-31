@@ -5,13 +5,15 @@ whether draft tokens were accepted. DFlash can speculate on the first request
 with prefix caching disabled. Repeated cache hits skip target prefill work, but
 do not return a cached answer: decoding still runs again.
 
-The current executor batches target work across requests. Prefills and draft
-proposals are serial per request. Within one DFlash draft, proposed token
-positions are generated in parallel. In `--verify-mode sequential`, verification
+The current executor batches prefill suffixes, draft proposals and target work
+across requests; see [full batch runtime](full_batch_runtime.md). Ragged draft
+requests share a padded forward with independent context caches. In
+`--verify-mode sequential`, verification
 positions execute serially (each position can batch several requests and use
 a target decode CUDA graph). In `parallel`, positions and requests are packed
-into a target forward, currently eager. This is wave batching, not full pipeline
-parallelism or continuous batching.
+into a target forward, currently eager. `--continuous-batching` enables offline
+slot refill between rounds. The default still groups requests into fixed waves.
+The historical measurements below precede the full batch optimization.
 
 ## Reading the new counters
 

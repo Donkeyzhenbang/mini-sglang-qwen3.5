@@ -1,3 +1,5 @@
+Latest runtime: [batched prefill/draft, GDN optimization and continuous slot refill](full_batch_runtime.md). This is an experimental CLI path; HTTP scheduler integration remains separate work.
+
 GPU validation update: see [2026-08-31 experiments](gpu_validation_2026-08-31.md). The 4B smoke gate passes, but expanded parallel token parity remains open. Use `--verify-mode sequential` only as a diagnostic oracle.
 
 Batch/Graph update: [four-request demo](batch_graph_demo.md) documents opt-in wave batching, readable answers, repeat-cache hits and target decode CUDA graphs. The CPU-only implementation notes below describe the earlier stage.
