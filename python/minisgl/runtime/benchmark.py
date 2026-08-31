@@ -72,6 +72,12 @@ def main():
     p.add_argument("--host-cache-mib", type=int, default=0)
     p.add_argument("--cache-policy", choices=["cost", "lru"], default="cost")
     p.add_argument("--gdn-extend", choices=["recurrent", "packed"], default="recurrent")
+    p.add_argument(
+        "--verify-mode",
+        choices=["parallel", "sequential"],
+        default="parallel",
+        help="Sequential is a numerical-consistency oracle, not an acceleration path",
+    )
     p.add_argument("--warmup", type=int, default=1)
     p.add_argument("--seed", type=int, default=42)
     args = p.parse_args()
@@ -162,6 +168,7 @@ def main():
             capture_layer_ids=taps,
             cache=cache,
             budget_bytes=int(args.gpu_budget_gib * 2**30),
+            verify_mode=args.verify_mode,
         )
         controller = (
             AdaptiveBlockController(tuple(b for b in (1, 2, 4, 8, 16) if b <= args.block_size))

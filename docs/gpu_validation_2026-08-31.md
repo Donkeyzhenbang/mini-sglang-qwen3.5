@@ -63,3 +63,48 @@ No remote model code is used in the native inference path.
 The synthetic workload now stores its shared prefix in row zero, ensuring
 short four-request groups actually exercise reuse. Results record git dirty
 state; HF results record which optional GDN operators are installed.
+
+## Repeated trials and expanded gates
+
+18 clean-worktree trials at 31c7bdb (6 modes x 3 randomized repetitions),
+4 requests / 176 output tokens each. All smoke outputs match the HF reference.
+Median decode tokens/s: target 47.50, block2 58.16, block4 81.12,
+block8 110.88, block16 83.18, adaptive 102.53. The block8 observed range is
+75.43-114.34 and target range 39.58-52.38: pilot variability is substantial.
+The 2.33x block8 and 2.16x adaptive ratios apply only to this experimental
+single-request baseline. Adaptive does not beat the best fixed block here.
+Block8 component times: draft ~23%, verify ~48%, checkpoint/restore/replay ~29%.
+
+The expanded eight-chat workload FAILS strict parallel token parity: fixed8
+matches target on 6/8 requests, adaptive on 6/8, and HF+FLA on 5/8. Never turn
+these runs into a validated speedup claim. `probe_verify_shapes.py` reproduces
+argmax changes from an identical history/state when only the verify block
+shape changes: tied BF16 logits (26.0/26.0 or 21.625/21.625) move by 0.125.
+`--verify-mode sequential` is now an explicit diagnostic oracle. It uses the
+same DFlash acceptance and rollback loop but executes target tokens one at a
+time; fixed8 then matches target on all eight chats. It intentionally sacrifices
+parallel verification acceleration. Default `parallel` remains experimental;
+this does NOT resolve general numerical consistency or HF parity.
+
+4B shared-prefix synthetic cache runs restore correctly and all GPU/CPU/LRU
+outputs match each other, but only 11/12 match no-cache full recomputation.
+Synchronous whole-bundle caching increases TTFT on this workload. Neither a
+cache speedup nor a benefit of cost eviction over LRU has been demonstrated.
+
+Injected software-budget pressure with real target+draft weights releases
+57,223,168 bytes of GPU prefix cache to CPU, restricts feasible blocks to [1],
+and restores [1,2,4,8,16] when the budget is restored. This does not simulate
+physical 24GB exhaustion or establish 27B capacity. `validate_memory_pressure.py`
+is the reproducible integration check.
+
+A 128/512/2048/4096-input-token synthetic sweep completes with a peak of
+10.29 GiB allocated tensors for target+draft; strict token parity passes 3/4
+length cases (512,2048,4096), fails the 128 case. This crosses the draft sliding
+window boundary, but does not certify arbitrary long-context quality or maximum
+context capacity. Allocation is distinct from reserved CUDA memory/device usage.
+
+Priorities from these measurements: batch-shape numerical consistency and wider
+quality gates; reduce full-target replay after speculative rejection; pack and
+pin hybrid state transfers before evaluating asynchronous offload; calibrate
+adaptive exploration on changing workloads using held-out data. Production
+batching/graphs, full HiCache, 27B GPTQ and DFlash2 remain out of scope so far.

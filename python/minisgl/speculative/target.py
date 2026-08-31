@@ -34,7 +34,11 @@ class MiniSGLTarget:
         cache: HybridPrefixCache | None = None,
         budget_bytes=24 << 30,
         safety_bytes=256 << 20,
+        verify_mode="parallel",
     ):
+        if verify_mode not in ("parallel", "sequential"):
+            raise ValueError("Unknown verification mode")
+        self.verify_mode = verify_mode
         self.engine, self.device = engine, engine.device
         self.capture_layer_ids = tuple(capture_layer_ids)
         if any(
@@ -193,6 +197,15 @@ class MiniSGLTarget:
         self.history = list(snapshot.history)
 
     def verify(self, block):
+        if self.verify_mode == "sequential" and len(block) > 1:
+            # Diagnostic oracle: keep the same GEMM shapes as ordinary decode.
+            # This deliberately gives up parallel target verification speed.
+            outputs = [self._forward([token]) for token in block]
+            logits = torch.cat([item[0] for item in outputs])
+            features = (
+                torch.cat([item[1] for item in outputs]) if outputs[0][1] is not None else None
+            )
+            return logits.argmax(-1).tolist(), features
         logits, features = self._forward(block)
         return logits.argmax(-1).tolist(), features
 

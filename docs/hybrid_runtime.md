@@ -1,3 +1,5 @@
+GPU validation update: see [2026-08-31 experiments](gpu_validation_2026-08-31.md). The 4B smoke gate passes, but expanded parallel token parity remains open. Use `--verify-mode sequential` only as a diagnostic oracle.
+
 # Memory-aware Qwen3.5 runtime: experimental implementation
 
 本分支把 MiniSGLang 作为实验平台，研究混合状态缓存与基于实测成本的投机块长选择。实现日期 2026-08-30。当前云端只有 CPU，没有任何本项目的新 GPU 吞吐、加速比或 27B 部署结果。
