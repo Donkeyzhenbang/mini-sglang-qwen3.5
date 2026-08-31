@@ -108,3 +108,28 @@ quality gates; reduce full-target replay after speculative rejection; pack and
 pin hybrid state transfers before evaluating asynchronous offload; calibrate
 adaptive exploration on changing workloads using held-out data. Production
 batching/graphs, full HiCache, 27B GPTQ and DFlash2 remain out of scope so far.
+
+## Reproduction and evidence
+
+Committed machine-readable record: `docs/gpu_results_2026-08-31.json`.
+Expanded inputs: `benchmark/runtime/workloads/gpu-{chat,cache,length}-2026-08-31.jsonl`.
+Raw JSONs, logs and command manifests remain in the data-disk results directory.
+The normal eight-chat baseline emits 433 tokens; the sequential DFlash oracle
+matches all of them. No precision tolerance was used to pass the token gate.
+
+Example after setting MODEL and DRAFT to the verified local directories:
+
+```bash
+python -m minisgl.runtime.benchmark --model "$MODEL" --draft "$DRAFT" \
+  --mode fixed --block-size 8 --gdn-extend packed --max-context 1024 \
+  --workload benchmark/runtime/workloads/gpu-chat-2026-08-31.jsonl \
+  --output /root/autodl-tmp/runtime-results/parallel-chat.json
+# For the strict numerical oracle, add --verify-mode sequential.
+# Compare with an independent --mode target run using runtime.analyze --tokens-only.
+```
+
+Do not report the expanded chat or cache measurements as validated throughput
+improvements: those strict gates fail for the parallel implementation. Observed
+4B cache mean TTFT is 54.44ms off, 78.41ms GPU+host cost policy, 92.22ms host-only,
+79.47ms GPU+host LRU. These are diagnostic observations on differing generations.
+The cached implementations are token-identical to one another.
