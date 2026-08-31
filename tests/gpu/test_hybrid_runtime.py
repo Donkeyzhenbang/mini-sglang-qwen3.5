@@ -169,3 +169,20 @@ def test_ragged_packed_convolution_matches_torch_and_preserves_inactive_slots(ch
     torch.testing.assert_close(actual, torch.cat(expected), rtol=0, atol=0)
     torch.testing.assert_close(actual_state, expected_rt.conv_cache, rtol=0, atol=0)
     torch.testing.assert_close(actual_state[2], initial[2], rtol=0, atol=0)
+
+
+def test_decode_convolution_matches_bf16_prefill_rounding():
+    from minisgl.attention.gdn import GDNAttnBackend, _LayerRuntime
+
+    torch.manual_seed(118)
+    x = torch.randn(4, 8192, device="cuda", dtype=torch.bfloat16)
+    w = torch.randn(8192, 1, 4, device="cuda", dtype=torch.bfloat16)
+    initial = torch.randn(4, 8192, 3, device="cuda", dtype=torch.bfloat16)
+    rt = _LayerRuntime(initial.clone(), torch.empty(0))
+    expected = F.silu(F.conv1d(torch.cat([initial, x.unsqueeze(-1)], -1), w, groups=8192)).squeeze(
+        -1
+    )
+    actual = GDNAttnBackend()._apply_conv_decode_batch(
+        x, w, rt, torch.arange(4, device="cuda", dtype=torch.int32)
+    )
+    torch.testing.assert_close(actual, expected, rtol=0, atol=0)

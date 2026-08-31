@@ -343,6 +343,9 @@ class GDNAttnBackend:
             activation="silu",
             conv_state_indices=state_indices_i32,
             pad_slot_id=PAD_SLOT_ID,
+            # Match BF16 torch prefill/packed verify: FP32 products, round
+            # convolution output to input dtype, then evaluate SiLU.
+            round_before_silu=True,
         )
 
     def forward_decode(

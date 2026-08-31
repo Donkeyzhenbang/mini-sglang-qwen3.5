@@ -2,7 +2,6 @@ from __future__ import annotations
 
 # SPDX-License-Identifier: Apache-2.0
 # Adapted from sglang/vllm causal conv1d Triton implementation.
-
 from typing import Optional, Union
 
 import torch
@@ -59,6 +58,7 @@ def _causal_conv1d_update_kernel(
     HAS_BIAS: tl.constexpr,
     KERNEL_WIDTH: tl.constexpr,
     SILU_ACTIVATION: tl.constexpr,
+    ROUND_BEFORE_SILU: tl.constexpr,
     IS_CONTINUOUS_BATCHING: tl.constexpr,
     IS_SPEC_DECODING: tl.constexpr,
     NP2_STATELEN: tl.constexpr,
@@ -211,9 +211,7 @@ def _causal_conv1d_update_kernel(
                 tl.where(idx_tokens == idx_token, retrieve_next_siblings, 0)
             )
             if retrieve_sibling_token_idx != -1:
-                parent_idx_token = tl.sum(
-                    tl.where(idx_tokens == idx_token, parent_idx_tokens, 0)
-                )
+                parent_idx_token = tl.sum(tl.where(idx_tokens == idx_token, parent_idx_tokens, 0))
                 parent_idx_tokens = tl.where(
                     idx_tokens == retrieve_sibling_token_idx,
                     parent_idx_token,
@@ -260,12 +258,13 @@ def _causal_conv1d_update_kernel(
                             mask=mask_w,
                         )
 
-                acc += matrix_x * matrix_w
+                if ROUND_BEFORE_SILU:
+                    acc += matrix_x.to(tl.float32) * matrix_w.to(tl.float32)
+                else:
+                    acc += matrix_x * matrix_w
 
                 if _idx_token > 0:
-                    _idx_token = tl.sum(
-                        tl.where(idx_tokens == _idx_token, parent_idx_tokens, 0)
-                    )
+                    _idx_token = tl.sum(tl.where(idx_tokens == _idx_token, parent_idx_tokens, 0))
                     x_ptrs_1d = x_base_1d + _idx_token * stride_x_token
                     matrix_x = tl.load(x_ptrs_1d, mask=mask_x_1d)
                 else:
@@ -315,7 +314,10 @@ def _causal_conv1d_update_kernel(
                         x_ptrs_1d = x_base_1d + idx_token * stride_x_token
                         matrix_x = tl.load(x_ptrs_1d, mask=mask_x_1d)
 
-                acc += matrix_x * matrix_w
+                if ROUND_BEFORE_SILU:
+                    acc += matrix_x.to(tl.float32) * matrix_w.to(tl.float32)
+                else:
+                    acc += matrix_x * matrix_w
 
             if KERNEL_WIDTH == 2:
                 col0 = matrix_x
@@ -342,7 +344,11 @@ def _causal_conv1d_update_kernel(
                     tl.store(base_ptr + 2 * stride_inter_win, col2, mask=mask_w)
 
         if SILU_ACTIVATION:
-            acc = acc / (1 + tl.exp(-acc))
+            if ROUND_BEFORE_SILU:
+                acc = acc.to(x_ptr.dtype.element_ty).to(tl.float32)
+                acc = acc * tl.sigmoid(acc)
+            else:
+                acc = acc / (1 + tl.exp(-acc))
         mask_1d = (idx_token < seqlen) & (idx_feats < dim)
         o_ptrs = (
             o_ptr
@@ -378,6 +384,7 @@ def causal_conv1d_update(
     retrieve_parent_token: Optional[torch.Tensor] = None,
     pad_slot_id: int = PAD_SLOT_ID,
     validate_data: bool = False,
+    round_before_silu: bool = False,
 ):
     if isinstance(activation, bool):
         activation = "silu" if activation is True else None
@@ -411,9 +418,7 @@ def causal_conv1d_update(
     stride_x_seq, stride_x_dim, stride_x_token = x.stride()
     stride_o_seq, stride_o_dim, stride_o_token = out.stride()
     stride_istate_seq, stride_istate_dim, stride_istate_token = conv_state.stride()
-    stride_state_indices = (
-        conv_state_indices.stride(0) if conv_state_indices is not None else 0
-    )
+    stride_state_indices = conv_state_indices.stride(0) if conv_state_indices is not None else 0
     stride_intermediate_state_indices = (
         intermediate_state_indices.stride(0) if intermediate_state_indices is not None else 0
     )
@@ -510,6 +515,7 @@ def causal_conv1d_update(
         HAS_BIAS=bias is not None,
         KERNEL_WIDTH=width,
         SILU_ACTIVATION=activation in ["silu", "swish"],
+        ROUND_BEFORE_SILU=round_before_silu,
         IS_CONTINUOUS_BATCHING=conv_state_indices is not None,
         IS_SPEC_DECODING=num_accept_tokens is not None,
         NP2_STATELEN=np2_statelen,
@@ -518,6 +524,7 @@ def causal_conv1d_update(
         BLOCK_N=256,
         SAVE_INTERMEDIATE=intermediate_conv_window is not None,
         HAS_EAGLE_TREE_CUSTOM_ATTN_MASK=retrieve_next_token is not None,
+        enable_fp_fusion=not round_before_silu,
     )
 
     if unsqueeze:
