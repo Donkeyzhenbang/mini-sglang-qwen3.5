@@ -27,6 +27,26 @@ def backend_with_state():
     return b
 
 
+def test_cpu_bf16_decode_convolution_uses_same_rounding_as_prefill():
+    torch.manual_seed(118)
+    x = torch.randn(3, 64, dtype=torch.bfloat16)
+    weight = torch.randn(64, 1, 4, dtype=torch.bfloat16)
+    initial = torch.randn(4, 64, 3, dtype=torch.bfloat16)
+    slots = torch.tensor([3, 0, 2], dtype=torch.int32)
+    backend = GDNAttnBackend()
+    oracle_rt = _LayerRuntime(initial.clone(), torch.empty(0))
+    expected = torch.cat(
+        [
+            backend._apply_conv(row.unsqueeze(0), slot, weight, oracle_rt)
+            for row, slot in zip(x, slots.tolist())
+        ]
+    )
+    actual_rt = _LayerRuntime(initial.clone(), torch.empty(0))
+    actual = backend._apply_conv_decode_batch(x, weight, actual_rt, slots)
+    torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+    torch.testing.assert_close(actual_rt.conv_cache, oracle_rt.conv_cache, rtol=0, atol=0)
+
+
 def request(length):
     return Req(torch.arange(length), 0, 0, 10, 1, SamplingParams(), None)
 

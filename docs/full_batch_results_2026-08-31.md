@@ -17,6 +17,8 @@
 | 同步与观测 | draft 和 verify 各自一次批量 token 回传；去掉逐请求同步；记录真实 prefill/draft/verify batch size 和补位时间 |
 | 数值 bugfix | decode 卷积改为 FP32 乘加、输入 dtype 舍入、再 SiLU，与 BF16 prefill/verify 的步骤一致 |
 
+CPU 卷积回退路径也统一为 FP32 乘加，并补充独立 CPU BF16 回归测试；这项后续修复不改变已测 GPU 路径。
+
 核心提交：`c1bb9e4`（批处理、补位、GDN 优化），`9f872a9`（卷积数值修复）。
 这是实验 CLI 路径，尚未把 DFlash 接入 MiniSGLang 的 HTTP/overlap scheduler。
 
@@ -44,7 +46,7 @@ decode 吞吐中位数为 161.85 tokens/s，仍高于此次 DFlash。无缓存�
 
 ## 功能与状态验证
 
-- CPU/GPU 测试共 **64 项通过**。卷积修复前的独立 fixture 有 14,332 / 32,768 个元素不一致，修复后逐元素一致。
+- CPU/GPU 测试共 **65 项通过**。卷积修复前的独立 fixture 有 14,332 / 32,768 个元素不一致，修复后逐元素一致。
 - 同一历史下，eager/CUDA Graph 的 logits、target features、KV、conv、SSM 逐元素一致；不活动 slot 不变，graph 返回值不会被下一次 replay 覆盖。
 - GPU 和 CPU prefix bundle 恢复，以及合批 checkpoint/restore，均通过逐元素检查。
 - 4 请求短问答、8 请求连续补位、batch=8、eager、adaptive 和 host-cache 的已比较输出全部一致。

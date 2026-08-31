@@ -324,7 +324,7 @@ class GDNAttnBackend:
             slots = state_indices_i32.to(dtype=torch.int64)
             conv_hist = rt.conv_cache.index_select(0, slots)
             full = torch.cat([conv_hist, mixed_qkv.unsqueeze(-1)], dim=-1)
-            out = (full * weight_2d.unsqueeze(0)).sum(dim=-1)
+            out = (full.float() * weight_2d.float().unsqueeze(0)).sum(dim=-1).to(mixed_qkv.dtype)
             out = F.silu(out)
             hist_len = conv_hist.shape[-1]
             if hist_len > 0:

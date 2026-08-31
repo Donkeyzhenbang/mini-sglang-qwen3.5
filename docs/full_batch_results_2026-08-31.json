@@ -137,7 +137,7 @@
       "ratio": 1.5920820513490979
     }
   },
-  "tests_passed": 64,
+  "tests_passed": 65,
   "state_validation": {
     "measured": true,
     "gpu": "NVIDIA GeForce RTX 4090",
@@ -8197,5 +8197,6 @@
     "Three-run medians are local observations, not confidence intervals or production benchmarks.",
     "TTFT between fixed waves and continuous mode has different queue-arrival semantics; do not compare those means.",
     "Weights and 27B INT4 support were not changed."
-  ]
+  ],
+  "tests_include_post_measurement_cpu_fallback_fix": true
 }
