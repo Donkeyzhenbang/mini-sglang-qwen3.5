@@ -94,3 +94,7 @@ and end-to-end latency separately. Longer outputs provide more opportunities to
 amortize setup/prefill, but do not guarantee speedup: per-round speculative cost
 must be below the ordinary decode cost of the tokens actually produced. Batch
 size and context length can change both sides of that comparison.
+
+## Fresh cache-disabled check
+
+At `524402c`, a clean run with `--repeat 1 --gpu-cache-mib 0 --host-cache-mib 0 --verify-mode parallel --batch-size 4 --cuda-graph` produced the same four target outputs. It recorded `cache_enabled=false`, zero cache lookups, 119 emitted draft tokens / 423 proposed (28.13%), 2.87 tokens per request-round, and 61 speculative request-rounds plus one fallback. No previous request cache was needed. All 58 CPU/GPU tests passed. [Recorded counters](dflash_acceptance_nocache_2026-08-31.json).
