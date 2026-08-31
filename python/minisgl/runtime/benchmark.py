@@ -115,6 +115,7 @@ def main():
     from minisgl.engine import Engine, EngineConfig
     from minisgl.runtime.adaptive import AdaptiveBlockController
     from minisgl.runtime.hybrid_cache import HybridPrefixCache
+    from minisgl.runtime.speculation_stats import format_speculation, speculation_stats
     from minisgl.runtime.workload import describe_result, prepare_workload, print_result
     from minisgl.speculative.draft import DFlashDraft
     from minisgl.speculative.loop import generate
@@ -344,10 +345,12 @@ def main():
                 dict(slot=t.slot, **event) for t in targets for event in t.memory_events
             ],
             requests=results,
+            speculation=speculation_stats(r for result in results for r in result["rounds"]),
         )
         path = Path(args.output)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(output, ensure_ascii=False, indent=2))
+        print(format_speculation(output["speculation"]), flush=True)
         print(
             json.dumps(
                 {
@@ -359,6 +362,7 @@ def main():
                         "cache_enabled",
                         "cache",
                         "execution",
+                        "speculation",
                     )
                 }
             )

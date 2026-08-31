@@ -1,5 +1,7 @@
 # Four-request batching, readable answers and CUDA graphs
 
+For draft acceptance rates (not cache hits), see [DFlash metrics](dflash_metrics.md).
+
 This is the experimental dense Qwen3.5 BF16 runtime, not the OpenAI service.
 The initial four-question GPU checks use Qwen3.5-4B and its matching DFlash v1
 checkpoint on RTX 4090. Broader BF16 token-parity limitations still apply; see

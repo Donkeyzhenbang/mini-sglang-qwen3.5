@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 import json
 
+from minisgl.runtime.speculation_stats import format_speculation, speculation_stats
+
 
 def prepare_workload(raw, tokenizer, *, repeat=1, chat_template=False):
     rows = [json.loads(line) for line in raw.decode("utf-8").splitlines() if line.strip()]
@@ -58,6 +60,7 @@ def describe_result(result, row, tokenizer, cache_event):
         output_text=tokenizer.decode(result["token_ids"], skip_special_tokens=True),
         cache_event=dict(cache_event),
         finish_reason=finish_reason,
+        speculation=speculation_stats(result["rounds"]),
     )
     return result
 
@@ -71,3 +74,4 @@ def print_result(index, result):
         flush=True,
     )
     print(f"Prompt: {result['prompt']}\nAnswer: {result['output_text']}", flush=True)
+    print(format_speculation(result["speculation"]), flush=True)

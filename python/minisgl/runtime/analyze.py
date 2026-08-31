@@ -4,6 +4,8 @@ import argparse
 import json
 from pathlib import Path
 
+from minisgl.runtime.speculation_stats import speculation_stats
+
 
 def summarize(data):
     requests = data["requests"]
@@ -31,6 +33,7 @@ def summarize(data):
         restore_ms=sum(x["restore_ms"] for x in rounds),
         peak_allocated_bytes=data["peak_allocated_bytes"],
         cache=data["cache"],
+        speculation=speculation_stats(rounds),
     )
 
 
@@ -60,13 +63,24 @@ def main():
     parser.add_argument(
         "--tokens-only", action="store_true", help="Also accepts HF reference output"
     )
+    parser.add_argument(
+        "--per-request", action="store_true", help="Include each prompt's draft acceptance counters"
+    )
     args = parser.parse_args()
     runs = [json.loads(Path(p).read_text()) for p in args.runs]
-    print(
-        json.dumps(
-            {"token_parity": check_tokens(runs)} if args.tokens_only else compare(runs), indent=2
-        )
-    )
+    output = {"token_parity": check_tokens(runs)} if args.tokens_only else compare(runs)
+    if args.per_request and not args.tokens_only:
+        for summary, run in zip(output, runs):
+            summary["request_metrics"] = [
+                {
+                    "request": i + 1,
+                    "prompt": row.get("prompt"),
+                    "output_tokens": len(row["token_ids"]),
+                    "speculation": speculation_stats(row["rounds"]),
+                }
+                for i, row in enumerate(run["requests"])
+            ]
+    print(json.dumps(output, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":
