@@ -72,3 +72,68 @@ def test_gpu_eviction_offloads_complete_bundle():
     assert cache.stats["offloads"] == 1
     cache.resize_gpu_budget(0)
     assert cache.used("gpu") == 0 and cache.used("cpu") == 64
+
+
+@pytest.mark.parametrize("hv", [16, 32])
+def test_bf16_packed_extend_matches_stepwise_decode(hv):
+    from minisgl.kernel.triton.gdn_decode import packed_decode
+    from minisgl.kernel.triton.gdn_extend import packed_extend
+
+    torch.manual_seed(17)
+    h, k, v, count = 16, 128, 128, 17
+    qkv = torch.randn(count, 2 * h * k + hv * v, device="cuda", dtype=torch.bfloat16)
+    a, b = (torch.randn(count, hv, device="cuda", dtype=torch.bfloat16) for _ in range(2))
+    alog, dt = (torch.randn(hv, device="cuda", dtype=torch.bfloat16) for _ in range(2))
+    initial = torch.randn(1, hv, v, k, device="cuda")
+    slots = torch.tensor([0], device="cuda", dtype=torch.int32)
+    state = initial.clone()
+    actual = packed_extend(
+        qkv,
+        a,
+        b,
+        alog,
+        dt,
+        state,
+        slots,
+        torch.tensor([0, count], device="cuda", dtype=torch.int32),
+        h,
+        hv,
+        k,
+        v,
+    )
+    expected_state = initial.clone()
+    expected = torch.cat(
+        [
+            packed_decode(
+                qkv[i : i + 1],
+                a[i : i + 1],
+                b[i : i + 1],
+                alog,
+                dt,
+                expected_state,
+                slots,
+                h,
+                hv,
+                k,
+                v,
+                k**-0.5,
+            )
+            for i in range(count)
+        ]
+    )
+    torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+    torch.testing.assert_close(state, expected_state, rtol=0, atol=0)
+
+
+def test_bf16_single_token_conv_matches_full_convolution():
+    from minisgl.attention.gdn import GDNAttnBackend, _LayerRuntime
+
+    torch.manual_seed(11)
+    x = torch.randn(1, 8192, device="cuda", dtype=torch.bfloat16)
+    w = torch.randn(8192, 1, 4, device="cuda", dtype=torch.bfloat16)
+    initial = torch.randn(1, 8192, 3, device="cuda", dtype=torch.bfloat16)
+    rt = _LayerRuntime(initial.clone(), torch.empty(0))
+    expected = F.silu(F.conv1d(torch.cat([initial, x.unsqueeze(-1)], -1), w, groups=8192))
+    actual = GDNAttnBackend()._apply_conv(x, 0, w, rt)
+    torch.testing.assert_close(actual, expected.squeeze(-1), rtol=0, atol=0)
+    torch.testing.assert_close(rt.conv_cache, torch.cat([initial[:, :, 1:], x.unsqueeze(-1)], -1))

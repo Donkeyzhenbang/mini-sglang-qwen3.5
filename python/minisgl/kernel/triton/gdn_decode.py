@@ -72,7 +72,8 @@ def _packed_decode_kernel(
     x = a_val + dt_val
     softplus_x = tl.where(x <= SOFTPLUS_THRESHOLD, tl.log(1.0 + tl.exp(x)), x)
     g = -tl.exp(A_val) * softplus_x
-    beta = tl.sigmoid(b_val)
+    # beta is sigmoid(b) in the projection dtype in Qwen3.5/FLA.
+    beta = tl.sigmoid(b_val).to(b.dtype.element_ty).to(tl.float32)
 
     h = h * tl.exp(g)
     v = v - tl.sum(h * k[None, :], axis=1)

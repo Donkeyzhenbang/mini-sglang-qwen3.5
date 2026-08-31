@@ -48,10 +48,13 @@ def _extend_kernel(
         q = tl.load(base + qh * K + kk, mask=kk < K, other=0).to(tl.float32)
         k = tl.load(base + H * K + qh * K + kk, mask=kk < K, other=0).to(tl.float32)
         v = tl.load(base + 2 * H * K + vh * V + vv, mask=vv < V, other=0).to(tl.float32)
-        q *= tl.rsqrt(tl.sum(q * q) + 1e-6) * (K**-0.5)
-        k *= tl.rsqrt(tl.sum(k * k) + 1e-6)
+        # Preserve the same operation order as the one-token decode kernel.
+        q = q / tl.sqrt(tl.sum(q * q) + 1e-6)
+        k = k / tl.sqrt(tl.sum(k * k) + 1e-6)
+        q = q * (K**-0.5)
         a = tl.load(A + token * HV + vh).to(tl.float32) + dt
         beta = tl.sigmoid(tl.load(B + token * HV + vh).to(tl.float32))
+        beta = beta.to(B.dtype.element_ty).to(tl.float32)
         softplus = tl.where(a <= 20, tl.log(1 + tl.exp(a)), a)
         state *= tl.exp(-tl.exp(alog) * softplus)
         delta = (v - tl.sum(state * k[None, :], axis=1)) * beta

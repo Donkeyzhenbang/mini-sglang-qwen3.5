@@ -261,10 +261,13 @@ class GDNAttnBackend:
 
         if token_states.shape[0] == 1:
             full = torch.cat([conv_hist, token_states[0].unsqueeze(-1)], dim=-1)
-            out = (full * conv_weight.squeeze(1)).sum(dim=-1)
+            # Accumulate products in FP32, just like the convolution kernel.
+            # BF16 multiplication here used to round every tap before reduction.
+            out = (full.float() * conv_weight.squeeze(1).float()).sum(dim=-1)
+            out = out.to(token_states.dtype)
             out = F.silu(out)
             if hist_len > 0:
-                conv_hist[:, :-1] = conv_hist[:, 1:]
+                conv_hist[:, :-1] = conv_hist[:, 1:].clone()
                 conv_hist[:, -1] = token_states[0]
             return out.unsqueeze(0)
 
