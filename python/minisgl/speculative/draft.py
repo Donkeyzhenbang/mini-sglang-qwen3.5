@@ -182,6 +182,13 @@ class DFlashDraft(nn.Module):
         for layer in self.layers:
             layer.self_attn.reset()
 
+    def fork_context(self):
+        """Share immutable weights, but give each request its own draft KV state."""
+        with torch.device("meta"):
+            model = type(self)(self.config)
+        model.load_state_dict(self.state_dict(), strict=True, assign=True)
+        return model.eval()
+
     def forward(self, context_features, noise_embeddings, target_length):
         if self.context_length + context_features.shape[1] != target_length:
             raise ValueError("Draft context must contain exactly the newly confirmed target states")

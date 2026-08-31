@@ -66,3 +66,21 @@ def test_native_checkpoint_loading(tmp_path):
     restored = DFlashDraft.from_directory(tmp_path, "cpu", torch.float32)
     for name, value in m.state_dict().items():
         torch.testing.assert_close(restored.state_dict()[name], value)
+
+
+@torch.inference_mode()
+def test_request_context_forks_share_weights_but_not_kv():
+    torch.manual_seed(41)
+    original = DFlashDraft(config()).eval()
+    first, second = original.fork_context(), original.fork_context()
+    assert (
+        first.fc.weight.data_ptr() == second.fc.weight.data_ptr() == original.fc.weight.data_ptr()
+    )
+    a, b, noise = torch.randn(1, 5, 16), torch.randn(1, 3, 16), torch.randn(1, 4, 8)
+    first(a, noise, 5)
+    before = first.layers[1].self_attn.cached_k.clone()
+    second(b, noise, 3)
+    assert first.context_length == 5 and second.context_length == 3 and original.context_length == 0
+    torch.testing.assert_close(first.layers[1].self_attn.cached_k, before, rtol=0, atol=0)
+    second.reset()
+    assert first.layers[1].self_attn.cached_k is not None

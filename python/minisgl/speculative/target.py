@@ -35,10 +35,17 @@ class MiniSGLTarget:
         budget_bytes=24 << 30,
         safety_bytes=256 << 20,
         verify_mode="parallel",
+        slot=0,
+        executor=None,
     ):
         if verify_mode not in ("parallel", "sequential"):
             raise ValueError("Unknown verification mode")
+        if not 0 <= slot < engine.page_table.shape[0] - 1:
+            raise ValueError("Invalid request slot (dummy slot is reserved)")
         self.verify_mode = verify_mode
+        self.slot, self.executor = slot, executor
+        self.kv_start = slot * engine.max_seq_len
+        self.last_cache_event = {}
         self.engine, self.device = engine, engine.device
         self.capture_layer_ids = tuple(capture_layer_ids)
         if any(
@@ -54,8 +61,8 @@ class MiniSGLTarget:
         self.embedding = engine.model.model.embed_tokens.weight
         head = engine.model.lm_head
         self.head = (head.tied_embedding or head).weight
-        engine.page_table[0, : engine.max_seq_len] = torch.arange(
-            engine.max_seq_len, dtype=torch.int32, device=self.device
+        engine.page_table[slot, : engine.max_seq_len] = torch.arange(
+            self.kv_start, self.kv_start + engine.max_seq_len, dtype=torch.int32, device=self.device
         )
 
     @property
@@ -67,12 +74,14 @@ class MiniSGLTarget:
 
     @torch.inference_mode()
     def _forward(self, tokens: list[int], *, prefill=False):
+        if self.executor is not None:
+            return self.executor.forward([(self, tokens)], prefill=prefill)[0]
         if not tokens or self.length + len(tokens) > self.engine.max_seq_len:
             raise ValueError("Input exceeds the reserved target context")
         new_history = self.history + list(tokens)
         req = Req(
             torch.tensor(new_history, dtype=torch.int32),
-            0,
+            self.slot,
             self.length,
             self.engine.max_seq_len - len(new_history),
             0,
@@ -85,7 +94,7 @@ class MiniSGLTarget:
         batch.positions = torch.arange(
             self.length, len(new_history), dtype=torch.int32, device=self.device
         )
-        batch.out_loc = batch.positions
+        batch.out_loc = batch.positions + self.kv_start
         with torch.cuda.stream(self.engine.stream):
             self.engine.attn_backend.prepare_metadata(batch)
             with (
@@ -110,7 +119,9 @@ class MiniSGLTarget:
             if kind == "k"
             else self.engine.kv_cache.v_cache(layer)
         )
-        return t.view(-1, t.shape[-2], t.shape[-1])
+        return t.view(-1, t.shape[-2], t.shape[-1])[
+            self.kv_start : self.kv_start + self.engine.max_seq_len
+        ]
 
     def _prefix_payload(self, logits, features):
         payload = {"last_logits": logits[-1:].detach()}
@@ -120,8 +131,8 @@ class MiniSGLTarget:
             for kind in ("k", "v"):
                 payload[f"{kind}.{layer}"] = self._kv_view(layer, kind)[: self.length]
         for layer, rt in self.gdn._runtime.items():
-            payload[f"conv.{layer}"] = rt.conv_cache[0]
-            payload[f"ssm.{layer}"] = rt.ssm_cache[0]
+            payload[f"conv.{layer}"] = rt.conv_cache[self.slot]
+            payload[f"ssm.{layer}"] = rt.ssm_cache[self.slot]
         return payload
 
     def _restore_prefix(self, entry):
@@ -133,9 +144,9 @@ class MiniSGLTarget:
             if kind in ("k", "v"):
                 self._kv_view(layer, kind)[: len(entry.tokens)].copy_(source)
             elif kind == "conv":
-                self.gdn._runtime[layer].conv_cache[0].copy_(source)
+                self.gdn._runtime[layer].conv_cache[self.slot].copy_(source)
             elif kind == "ssm":
-                self.gdn._runtime[layer].ssm_cache[0].copy_(source)
+                self.gdn._runtime[layer].ssm_cache[self.slot].copy_(source)
         self.history = list(entry.tokens)
 
     @torch.inference_mode()
@@ -143,9 +154,16 @@ class MiniSGLTarget:
         self.history = []
         self.pending_features = []
         with torch.cuda.stream(self.engine.stream):
-            self.gdn.on_table_slot_allocated(0)
+            self.gdn.on_table_slot_allocated(self.slot)
             self.gdn.prepare_state_slots()
             entry = self.cache.lookup(prompt) if self.cache else None
+            self.last_cache_event = dict(
+                status="hit" if entry else ("miss" if self.cache else "disabled"),
+                matched_tokens=len(entry.tokens) if entry else 0,
+                prompt_tokens=len(prompt),
+                tier=entry.tier if entry else None,
+                stored=False,
+            )
             start = time.perf_counter()
             all_features = None
             if entry is not None:
@@ -172,7 +190,9 @@ class MiniSGLTarget:
             if self.cache and (entry is None or len(entry.tokens) != len(prompt)):
                 # Reused-prefix compute cost is an estimate; suffix is measured.
                 recompute_ms = cost_ms + (entry.recompute_ms if entry else 0)
-                self.cache.put(prompt, self._prefix_payload(logits, all_features), recompute_ms)
+                self.last_cache_event["stored"] = self.cache.put(
+                    prompt, self._prefix_payload(logits, all_features), recompute_ms
+                )
             return int(logits[-1].argmax().item())
 
     @torch.inference_mode()
@@ -181,7 +201,7 @@ class MiniSGLTarget:
             return TargetCheckpoint(
                 list(self.history),
                 {
-                    lid: (rt.conv_cache[0].clone(), rt.ssm_cache[0].clone())
+                    lid: (rt.conv_cache[self.slot].clone(), rt.ssm_cache[self.slot].clone())
                     for lid, rt in self.gdn._runtime.items()
                 },
             )
@@ -192,8 +212,8 @@ class MiniSGLTarget:
             raise ValueError("Rollback requires a checkpoint")
         with torch.cuda.stream(self.engine.stream):
             for lid, (conv, ssm) in snapshot.states.items():
-                self.gdn._runtime[lid].conv_cache[0].copy_(conv)
-                self.gdn._runtime[lid].ssm_cache[0].copy_(ssm)
+                self.gdn._runtime[lid].conv_cache[self.slot].copy_(conv)
+                self.gdn._runtime[lid].ssm_cache[self.slot].copy_(ssm)
         self.history = list(snapshot.history)
 
     def verify(self, block):
@@ -221,14 +241,14 @@ class MiniSGLTarget:
         self.pending_features.clear()
         return result
 
-    def feasible_blocks(self, context, blocks):
+    def feasible_blocks(self, context, blocks, batch_size=1):
         def admission():
             allocated = torch.cuda.memory_allocated(self.device)
             reserved = torch.cuda.memory_reserved(self.device)
             free, _ = torch.cuda.mem_get_info(self.device)
             available = min(free + reserved - allocated, self.budget_bytes - allocated)
             state_bytes = sum(
-                t[0].numel() * t.element_size()
+                t[self.slot].numel() * t.element_size()
                 for rt in self.gdn._runtime.values()
                 for t in (rt.conv_cache, rt.ssm_cache)
             )
@@ -238,8 +258,8 @@ class MiniSGLTarget:
             return JointMemoryBudget(self.budget_bytes, 0, self.safety_bytes).feasible_blocks(
                 blocks,
                 live_bytes=max(0, self.budget_bytes - available),
-                bytes_per_block_token=per_token,
-                checkpoint_bytes=state_bytes,
+                bytes_per_block_token=per_token * batch_size,
+                checkpoint_bytes=state_bytes * batch_size,
             )
 
         result = admission()

@@ -11,9 +11,14 @@ def summarize(data):
     decoded = sum(max(0, len(r["token_ids"]) - 1) for r in requests)
     decode_ms = sum(r["decode_ms"] for r in requests)
     total_ms = decode_ms + sum(r["ttft_ms"] for r in requests)
+    if data.get("waves"):
+        decode_ms = sum(w["decode_ms"] for w in data["waves"])
+        total_ms = sum(w["total_ms"] for w in data["waves"])
     rounds = [x for r in requests for x in r["rounds"]]
     return dict(
         mode=data["mode"],
+        execution=data.get("execution"),
+        throughput_time_basis="wave wall time" if data.get("waves") else "serial request time",
         requests=len(requests),
         output_tokens=output_tokens,
         output_tokens_per_second=output_tokens * 1000 / max(total_ms, 1e-9),

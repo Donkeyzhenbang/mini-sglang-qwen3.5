@@ -1,0 +1,4 @@
+{"prompt":"请用两句话解释 KV cache 为什么能加速大模型推理。","max_new_tokens":96}
+{"prompt":"计算 17 乘以 23，只输出结果。","max_new_tokens":32}
+{"prompt":"写一个 Python 函数，判断一个整数是否为偶数。","max_new_tokens":96}
+{"prompt":"把这句话翻译成英文：今天阳光很好，我们一起去公园散步。","max_new_tokens":64}

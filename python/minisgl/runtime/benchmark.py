@@ -80,12 +80,34 @@ def main():
     )
     p.add_argument("--warmup", type=int, default=1)
     p.add_argument("--seed", type=int, default=42)
+    p.add_argument(
+        "--batch-size",
+        type=int,
+        default=None,
+        help="Opt into wave batching, including size 1 for eager/graph comparisons",
+    )
+    p.add_argument(
+        "--cuda-graph",
+        action="store_true",
+        help="Capture target one-token decode only; draft/multi-token verify stay eager",
+    )
+    p.add_argument(
+        "--repeat", type=int, default=1, help="Repeat the entire workload, retaining cache"
+    )
+    p.add_argument(
+        "--chat-template",
+        action="store_true",
+        help="Format prompt strings as user chats, with thinking disabled",
+    )
+    p.add_argument("--show-text", action="store_true", help="Print prompt, answer and cache status")
     args = p.parse_args()
     if args.mode != "target" and not args.draft:
         p.error("--draft is required for speculative modes")
     if (
         min(args.max_context, args.block_size, args.gpu_budget_gib) <= 0
         or min(args.gpu_cache_mib, args.host_cache_mib, args.warmup) < 0
+        or args.repeat < 1
+        or (args.batch_size is not None and not 1 <= args.batch_size <= 16)
     ):
         p.error("Invalid budget, context or block size")
     import torch
@@ -93,6 +115,7 @@ def main():
     from minisgl.engine import Engine, EngineConfig
     from minisgl.runtime.adaptive import AdaptiveBlockController
     from minisgl.runtime.hybrid_cache import HybridPrefixCache
+    from minisgl.runtime.workload import describe_result, prepare_workload, print_result
     from minisgl.speculative.draft import DFlashDraft
     from minisgl.speculative.loop import generate
     from minisgl.speculative.target import MiniSGLTarget
@@ -103,6 +126,18 @@ def main():
             "GPU_UNAVAILABLE: CPU policy tests are available under tests/cpu; no benchmark was run."
         )
     torch.manual_seed(args.seed)
+    batch_size = args.batch_size or 1
+    use_batched = args.batch_size is not None or args.cuda_graph
+    tokenizer = load_tokenizer(args.model)
+    workload_bytes = Path(args.workload).read_bytes()
+    rows, workload_hash = prepare_workload(
+        workload_bytes,
+        tokenizer,
+        repeat=args.repeat,
+        chat_template=args.chat_template,
+    )
+    if any(len(row["input_ids"]) + row["max_new_tokens"] > args.max_context for row in rows):
+        p.error("Workload exceeds --max-context")
     draft_config = (
         json.loads((Path(args.draft) / "config.json").read_text())
         if args.mode != "target"
@@ -114,12 +149,12 @@ def main():
         model_path=args.model,
         tp_info=DistributedInfo(0, 1),
         dtype=torch.bfloat16,
-        max_running_req=1,
+        max_running_req=batch_size,
         attention_backend="fi",
         cuda_graph_max_bs=0,
         page_size=256,
         max_seq_len_override=args.max_context,
-        num_page_override=math.ceil(args.max_context / 256),
+        num_page_override=math.ceil(args.max_context / 256) * batch_size,
         prefix_state_budget_bytes=0,
         external_memory_bytes=external + (args.gpu_cache_mib << 20),
         gdn_extend_backend=args.gdn_extend,
@@ -148,7 +183,10 @@ def main():
             * 4
         )
     config = replace(
-        config, runtime_workspace_bytes=max(1 << 30, activation + 2 * draft_context + (256 << 20))
+        config,
+        runtime_workspace_bytes=max(
+            1 << 30, (activation + 2 * draft_context) * batch_size + (256 << 20)
+        ),
     )
     if draft_config:
         validate_model_pair(config.model_config, draft_config, args.block_size)
@@ -159,26 +197,40 @@ def main():
             if draft_config
             else None
         )
-        tokenizer = load_tokenizer(args.model)
         cache = HybridPrefixCache(
             args.gpu_cache_mib << 20, args.host_cache_mib << 20, policy=args.cache_policy
         )
-        target = MiniSGLTarget(
-            engine,
-            capture_layer_ids=taps,
-            cache=cache,
-            budget_bytes=int(args.gpu_budget_gib * 2**30),
-            verify_mode=args.verify_mode,
-        )
+        cache_enabled = bool(args.gpu_cache_mib or args.host_cache_mib)
+        if not cache_enabled:
+            print(
+                "Prefix cache disabled: both cache budgets are 0; misses are not counted.",
+                flush=True,
+            )
+        executor = None
+        if use_batched:
+            from minisgl.speculative.batch import BatchedTargetExecutor
+            from minisgl.speculative.batch_loop import generate_batch
+
+            executor = BatchedTargetExecutor(engine, taps, batch_size, cuda_graph=args.cuda_graph)
+        targets = [
+            MiniSGLTarget(
+                engine,
+                capture_layer_ids=taps,
+                cache=cache if cache_enabled else None,
+                budget_bytes=int(args.gpu_budget_gib * 2**30),
+                verify_mode=args.verify_mode,
+                slot=slot,
+                executor=executor,
+            )
+            for slot in range(batch_size)
+        ]
+        target = targets[0]
+        drafts = [draft] + [draft.fork_context() if draft else None for _ in range(batch_size - 1)]
         controller = (
             AdaptiveBlockController(tuple(b for b in (1, 2, 4, 8, 16) if b <= args.block_size))
             if args.mode == "adaptive"
             else None
         )
-        workload_bytes = Path(args.workload).read_bytes()
-        rows = [json.loads(s) for s in workload_bytes.decode("utf-8").splitlines() if s.strip()]
-        if not rows:
-            raise ValueError("Empty workload")
 
         def run(row):
             ids = row.get("input_ids")
@@ -203,8 +255,22 @@ def main():
                 feasible=lambda context: target.feasible_blocks(context, blocks),
             )
 
+        def wave(group):
+            n = len(group)
+            return generate_batch(
+                targets[:n],
+                drafts[:n],
+                [r["input_ids"] for r in group],
+                [r["max_new_tokens"] for r in group],
+                executor,
+                block_size=1 if args.mode == "target" else args.block_size,
+                adaptive=controller,
+                eos_token_id=tokenizer.eos_token_id,
+                sequential=args.verify_mode == "sequential",
+            )
+
         for _ in range(args.warmup):
-            run(rows[0])
+            wave(rows[:batch_size]) if executor else run(rows[0])
         cache.clear()
         cache.resize_gpu_budget(args.gpu_cache_mib << 20)
         # Warmup is excluded from controller history and reported counters.
@@ -214,9 +280,30 @@ def main():
         if controller:
             controller.observations.clear()
             controller.rounds = 0
-        target.memory_events.clear()
+        for target in targets:
+            target.memory_events.clear()
+        target = targets[0]
+        if executor:
+            executor.reset_stats()
         torch.cuda.reset_peak_memory_stats(engine.device)
-        results = [asdict(run(row)) for row in rows]
+        results, waves = [], []
+        for start in range(0, len(rows), batch_size):
+            group = rows[start : start + batch_size]
+            if executor:
+                generated, timing = wave(group)
+                waves.append(timing)
+            else:
+                generated = [run(group[0])]
+            for offset, (row, generated_row) in enumerate(zip(group, generated)):
+                result = describe_result(
+                    asdict(generated_row),
+                    row,
+                    tokenizer,
+                    targets[offset].last_cache_event,
+                )
+                results.append(result)
+                if args.show_text:
+                    print_result(len(results) - 1, result)
         try:
             revision = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
             dirty = bool(
@@ -230,7 +317,8 @@ def main():
             measured=True,
             mode=args.mode,
             arguments=vars(args),
-            workload_sha256=hashlib.sha256(workload_bytes).hexdigest(),
+            workload_sha256=workload_hash,
+            source_workload_sha256=hashlib.sha256(workload_bytes).hexdigest(),
             target_config_sha256=hashlib.sha256(
                 (Path(args.model) / "config.json").read_bytes()
             ).hexdigest(),
@@ -242,13 +330,39 @@ def main():
             peak_allocated_bytes=torch.cuda.max_memory_allocated(engine.device),
             peak_reserved_bytes=torch.cuda.max_memory_reserved(engine.device),
             cache=cache.stats,
-            memory_events=target.memory_events,
+            cache_enabled=cache_enabled,
+            execution=executor.stats()
+            if executor
+            else dict(
+                batch_size=1,
+                batching="serial legacy",
+                cuda_graph_enabled=False,
+                graph_replays=0,
+            ),
+            waves=waves,
+            memory_events=[
+                dict(slot=t.slot, **event) for t in targets for event in t.memory_events
+            ],
             requests=results,
         )
         path = Path(args.output)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(output, ensure_ascii=False, indent=2))
-        print(json.dumps({k: output[k] for k in ("mode", "gpu", "peak_allocated_bytes", "cache")}))
+        print(
+            json.dumps(
+                {
+                    k: output[k]
+                    for k in (
+                        "mode",
+                        "gpu",
+                        "peak_allocated_bytes",
+                        "cache_enabled",
+                        "cache",
+                        "execution",
+                    )
+                }
+            )
+        )
     finally:
         engine.shutdown()
 
