@@ -73,10 +73,16 @@ def main():
     p.add_argument("--cache-policy", choices=["cost", "lru"], default="cost")
     p.add_argument("--gdn-extend", choices=["recurrent", "packed"], default="recurrent")
     p.add_argument(
+        "--target-numerics",
+        choices=["stable", "fast"],
+        default="stable",
+        help="Stable uses fixed target reductions and FP32 logits; fast uses legacy BF16 library kernels",
+    )
+    p.add_argument(
         "--verify-mode",
         choices=["parallel", "sequential"],
         default="parallel",
-        help="Sequential uses one-token forwards for diagnostics; no general BF16 parity guarantee",
+        help="Sequential uses one-token forwards for diagnostics; fast numerics can vary with batch shape",
     )
     p.add_argument("--warmup", type=int, default=1)
     p.add_argument("--seed", type=int, default=42)
@@ -133,7 +139,12 @@ def main():
         )
     torch.manual_seed(args.seed)
     batch_size = args.batch_size or 1
-    use_batched = args.batch_size is not None or args.cuda_graph or args.continuous_batching
+    use_batched = (
+        args.batch_size is not None
+        or args.cuda_graph
+        or args.continuous_batching
+        or args.target_numerics == "stable"
+    )
     tokenizer = load_tokenizer(args.model)
     workload_bytes = Path(args.workload).read_bytes()
     rows, workload_hash = prepare_workload(
@@ -217,7 +228,13 @@ def main():
             from minisgl.speculative.batch import BatchedTargetExecutor
             from minisgl.speculative.batch_loop import generate_batch
 
-            executor = BatchedTargetExecutor(engine, taps, batch_size, cuda_graph=args.cuda_graph)
+            executor = BatchedTargetExecutor(
+                engine,
+                taps,
+                batch_size,
+                cuda_graph=args.cuda_graph,
+                target_numerics=args.target_numerics,
+            )
             executor.batching = "continuous offline refill" if args.continuous_batching else "wave"
         targets = [
             MiniSGLTarget(

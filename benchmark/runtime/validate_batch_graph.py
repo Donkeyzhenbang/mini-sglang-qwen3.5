@@ -21,6 +21,7 @@ def main():
     parser.add_argument("--model", required=True)
     parser.add_argument("--draft", required=True)
     parser.add_argument("--output", required=True)
+    parser.add_argument("--target-numerics", choices=["stable", "fast"], default="stable")
     args = parser.parse_args()
     draft = json.loads((Path(args.draft) / "config.json").read_text())
     taps = tuple(draft["dflash_config"]["target_layer_ids"])
@@ -41,7 +42,10 @@ def main():
     )
     engine = Engine(config)
     try:
-        executor = BatchedTargetExecutor(engine, taps, 4, cuda_graph=True)
+        executor = BatchedTargetExecutor(
+            engine, taps, 4, cuda_graph=True, target_numerics=args.target_numerics
+        )
+        torch.cuda.set_stream(engine.stream)
         cache = HybridPrefixCache(512 << 20, 1024 << 20)
         targets = [
             MiniSGLTarget(engine, capture_layer_ids=taps, slot=i, executor=executor, cache=cache)

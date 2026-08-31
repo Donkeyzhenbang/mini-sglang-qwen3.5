@@ -27,9 +27,17 @@ class _LinearTPImpl(BaseOP):
         self.local_output_size = local_osize
         self.weight = torch.empty(local_osize, local_isize)
         self.bias = torch.empty(local_osize) if has_bias else None
+        self._batch_invariant = False
+
+    def _linear(self, x: torch.Tensor) -> torch.Tensor:
+        if self._batch_invariant:
+            from minisgl.kernel.triton.invariant import invariant_linear
+
+            return invariant_linear(x, self.weight, self.bias)
+        return F.linear(x, self.weight, self.bias)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return F.linear(x, self.weight, self.bias)
+        return self._linear(x)
 
 
 class LinearReplicated(_LinearTPImpl):
@@ -103,7 +111,7 @@ class LinearOProj(_LinearTPImpl):
         super().__init__(full_isize, full_osize, local_isize, local_osize, has_bias)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        y = F.linear(x, self.weight, self.bias)
+        y = self._linear(x)
         if self._tp_size > 1:
             y = self._comm.all_reduce(y)
         return y
@@ -124,7 +132,7 @@ class LinearRowParallel(_LinearTPImpl):
         super().__init__(input_size, output_size, local_input_size, local_output_size, has_bias)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        y = F.linear(x, self.weight, self.bias)
+        y = self._linear(x)
         if self._tp_size > 1:
             y = self._comm.all_reduce(y)
         return y

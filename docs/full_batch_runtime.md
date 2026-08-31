@@ -1,7 +1,9 @@
 # Batched Qwen3.5 / DFlash runtime
 
-Measured results and remaining correctness limits are recorded in
-[the validation report](full_batch_results_2026-08-31.md).
+The default target arithmetic has changed: see
+[stable target numerics and long-output regressions](stable_target_numerics.md).
+The earlier measurements in [the historical report](full_batch_results_2026-08-31.md)
+used the `fast` numerical path and must be reproduced with that explicit option.
 
 The experimental CLI now batches **prefill suffixes, draft model forwards and
 target verification**. Cache lookup/restoration remains per request, while model
@@ -76,15 +78,12 @@ counts useful emitted draft tokens divided by proposed draft tokens. For an
 uncached acceptance experiment leave both cache budgets at zero. `--repeat 2`
 is unnecessary for speculative decoding itself.
 
-Correctness and performance comparisons must use identical tokenized workloads
-and output tokens. BF16 shape changes can change argmax near ties; the existing
-parallel/sequential numerical caveat still applies. Do not report speedups for
-token-mismatching runs. `--verify-mode sequential` uses one-token forwards for
-diagnostics; it is not a general guarantee of identical tokens. Different active
-batch sizes during rollback/replay can still change BF16 arithmetic.
-The mixed 256-token workload still fails complete target-only parity in parallel
-mode. A separate probe producing target logits directly in FP32 did not fix all
-cases and was not merged. Do not describe this runtime as universally lossless.
+Correctness and performance comparisons must use identical tokenized workloads,
+target numerical modes and output tokens. `--target-numerics stable` now fixes
+the target linear/attention reductions as well as retaining FP32 logits. The old
+`fast` path can still vary with decode/verify shapes, even with sequential verify.
+Do not report speedups for token-mismatching runs or claim cross-backend/cross-GPU
+bitwise reproducibility. See the stable numerics document for the regression suite.
 
 ```bash
 "$PY" -B -m pytest -o addopts='' tests/cpu tests/gpu -q

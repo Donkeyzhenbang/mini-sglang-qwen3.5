@@ -18,8 +18,9 @@ from torch.nn import functional as F
 
 
 class _DecodeModel:
-    def __init__(self, engine, taps, max_batch):
+    def __init__(self, engine, taps, max_batch, target_numerics):
         self.engine, self.taps = engine, taps
+        self.target_numerics = target_numerics
         head = engine.model.lm_head
         self.head = (head.tied_embedding or head).weight
         self.features = (
@@ -39,14 +40,25 @@ class _DecodeModel:
         if self.features is not None:
             self.features[: batch.padded_size].copy_(self.engine.model.model._last_aux_hidden)
         self.engine.model.model._last_aux_hidden = None
+        return self.project(hidden)
+
+    def project(self, hidden):
+        if self.target_numerics == "stable":
+            from minisgl.kernel.triton.invariant import invariant_linear
+
+            return invariant_linear(hidden, self.head, fp32_output=True)
         return F.linear(hidden, self.head).float()
 
 
 class BatchedTargetExecutor:
-    def __init__(self, engine, taps, max_batch, *, cuda_graph=False):
+    def __init__(self, engine, taps, max_batch, *, cuda_graph=False, target_numerics="fast"):
+        from .numerics import configure_target_numerics
+
+        configure_target_numerics(engine, target_numerics)
         self.engine, self.taps = engine, taps
         self.max_batch = max_batch
-        self.decode_model = _DecodeModel(engine, taps, max_batch)
+        self.target_numerics = target_numerics
+        self.decode_model = _DecodeModel(engine, taps, max_batch, target_numerics)
         self.graph_enabled = cuda_graph
         self.batching = "wave"
         engine.attn_backend.gdn_backend.packed_verify_conv = True
@@ -86,6 +98,7 @@ class BatchedTargetExecutor:
     def stats(self):
         return dict(
             batch_size=self.max_batch,
+            target_numerics=self.target_numerics,
             batching=self.batching,
             prefill="batched ragged suffixes; per-request cache restoration",
             draft="batched padded ragged contexts",
@@ -174,7 +187,7 @@ class BatchedTargetExecutor:
                             - 1
                         )
                         hidden = hidden.index_select(0, ends)
-                    logits = F.linear(hidden, self.decode_model.head).float()
+                    logits = self.decode_model.project(hidden)
                     if prefill:
                         self.prefill_calls += 1
                         self.prefill_batch_sizes[len(items)] += 1
