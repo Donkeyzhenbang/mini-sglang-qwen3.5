@@ -1,6 +1,6 @@
-Latest runtime: [batched prefill/draft, GDN optimization and continuous slot refill](full_batch_runtime.md). This is an experimental CLI path; HTTP scheduler integration remains separate work.
+Latest GPU validation: [stable target numerics and long-output parity](stable_target_results_2026-08-31.md), with [reproduction commands](stable_target_numerics.md). On the RTX 4090, 74 tests and 15 generation runs passed; 256/512-token output caps, batch 1/4/8, graphs, rollback and CPU prefix restoration are covered. DFlash is still slower than target-only on the measured batch-4 long workloads.
 
-GPU validation update: see [2026-08-31 experiments](gpu_validation_2026-08-31.md). The 4B smoke gate passes, but expanded parallel token parity remains open. Use `--verify-mode sequential` only as a diagnostic oracle.
+Runtime design: [batched prefill/draft, GDN optimization and continuous slot refill](full_batch_runtime.md). This is an experimental CLI path; HTTP scheduler integration remains separate work. Earlier `fast` results and CPU-stage notes below are historical, not current GPU availability or stable-mode status.
 
 Batch/Graph update: [four-request demo](batch_graph_demo.md) documents opt-in wave batching, readable answers, repeat-cache hits and target decode CUDA graphs. The CPU-only implementation notes below describe the earlier stage.
 

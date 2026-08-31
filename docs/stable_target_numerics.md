@@ -1,5 +1,8 @@
 # Stable target numerics for Qwen3.5 / DFlash
 
+Measured coverage and remaining performance limits are recorded in
+[the validation report](stable_target_results_2026-08-31.md).
+
 The experimental benchmark now defaults to `--target-numerics stable`. It uses
 the same target arithmetic for autoregressive decoding, packed verification,
 ragged batches and rollback replay. Multiple requests and verify tokens remain

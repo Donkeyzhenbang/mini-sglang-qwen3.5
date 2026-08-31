@@ -1,5 +1,8 @@
 # Qwen3.5 + DFlash：批处理优化实测记录
 
+这是旧 `fast` 数值路径的历史记录。后续修复已通过长回答对照，见
+[stable 数值路径验证](stable_target_results_2026-08-31.md)；复现本页数据需显式指定 `--target-numerics fast`。
+
 日期：2026-08-31。GPU：RTX 4090 24GB；target：Qwen3.5-4B BF16；draft：对应 DFlash v1。
 性能与模型验证的代码提交为 `9f872a99b7735ffcea11f38dbc48d2ec1811e918`。
 原始实验保存在云端 `/root/autodl-tmp/runtime-results/full-batch-C3sUfk`。

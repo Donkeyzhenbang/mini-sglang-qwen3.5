@@ -12,6 +12,14 @@ Mini-SGLang is a compact implementation of [SGLang](https://github.com/sgl-proje
 
 ## ✨ Key Features
 
+This fork also includes an experimental **Qwen3.5-4B + DFlash v1** runtime with
+batched prefill/draft/verify, hybrid KV/GDN prefix caching, adaptive block sizes,
+continuous slot refill and target decode CUDA graphs. The stable target numerical
+path has passed long-output parity tests on RTX 4090. This CLI is separate from
+the HTTP scheduler; speculative acceleration is not yet demonstrated on the
+measured batch-4 long workloads. See [reproduction](docs/stable_target_numerics.md)
+and [measured results](docs/stable_target_results_2026-08-31.md).
+
 - **High Performance**: Achieves state-of-the-art throughput and latency with advanced optimizations.
 - **Lightweight & Readable**: A clean, modular, and fully type-annotated codebase that is easy to understand and modify.
 - **Advanced Optimizations**:
