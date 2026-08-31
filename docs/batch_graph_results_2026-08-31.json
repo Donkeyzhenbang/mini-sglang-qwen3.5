@@ -1,0 +1,1478 @@
+{
+  "code_revision": "d010362f0d28dea6d017690d8c25df679220bfe2",
+  "gpu": "NVIDIA GeForce RTX 4090",
+  "tests": "54 passed",
+  "lint": "ruff check --ignore C408 on changed Python files; ruff format",
+  "raw_directory": "/root/autodl-tmp/runtime-results/batch-graph-szyRuB",
+  "clean_commands": [
+    {
+      "name": "clean-target",
+      "command": [
+        "/root/miniconda3/bin/python",
+        "-B",
+        "-m",
+        "minisgl.runtime.benchmark",
+        "--model",
+        "/root/autodl-tmp/models/hybrid-runtime/Qwen3.5-4B",
+        "--draft",
+        "/root/autodl-tmp/models/hybrid-runtime/Qwen3.5-4B-DFlash",
+        "--workload",
+        "benchmark/runtime/workloads/chat4.jsonl",
+        "--chat-template",
+        "--repeat",
+        "2",
+        "--host-cache-mib",
+        "1024",
+        "--gdn-extend",
+        "packed",
+        "--max-context",
+        "1024",
+        "--show-text",
+        "--mode",
+        "target",
+        "--batch-size",
+        "4",
+        "--cuda-graph",
+        "--gpu-cache-mib",
+        "512",
+        "--output",
+        "/root/autodl-tmp/runtime-results/batch-graph-szyRuB/clean-target.json"
+      ],
+      "exit_code": 0,
+      "elapsed_s": 17.295610189437866
+    },
+    {
+      "name": "clean-dflash",
+      "command": [
+        "/root/miniconda3/bin/python",
+        "-B",
+        "-m",
+        "minisgl.runtime.benchmark",
+        "--model",
+        "/root/autodl-tmp/models/hybrid-runtime/Qwen3.5-4B",
+        "--draft",
+        "/root/autodl-tmp/models/hybrid-runtime/Qwen3.5-4B-DFlash",
+        "--workload",
+        "benchmark/runtime/workloads/chat4.jsonl",
+        "--chat-template",
+        "--repeat",
+        "2",
+        "--host-cache-mib",
+        "1024",
+        "--gdn-extend",
+        "packed",
+        "--max-context",
+        "1024",
+        "--show-text",
+        "--mode",
+        "fixed",
+        "--block-size",
+        "8",
+        "--verify-mode",
+        "sequential",
+        "--batch-size",
+        "4",
+        "--cuda-graph",
+        "--gpu-cache-mib",
+        "512",
+        "--output",
+        "/root/autodl-tmp/runtime-results/batch-graph-szyRuB/clean-dflash.json"
+      ],
+      "exit_code": 0,
+      "elapsed_s": 29.07024335861206
+    },
+    {
+      "name": "clean-host",
+      "command": [
+        "/root/miniconda3/bin/python",
+        "-B",
+        "-m",
+        "minisgl.runtime.benchmark",
+        "--model",
+        "/root/autodl-tmp/models/hybrid-runtime/Qwen3.5-4B",
+        "--draft",
+        "/root/autodl-tmp/models/hybrid-runtime/Qwen3.5-4B-DFlash",
+        "--workload",
+        "benchmark/runtime/workloads/chat4.jsonl",
+        "--chat-template",
+        "--repeat",
+        "2",
+        "--host-cache-mib",
+        "1024",
+        "--gdn-extend",
+        "packed",
+        "--max-context",
+        "1024",
+        "--show-text",
+        "--mode",
+        "fixed",
+        "--block-size",
+        "8",
+        "--verify-mode",
+        "sequential",
+        "--batch-size",
+        "4",
+        "--cuda-graph",
+        "--gpu-cache-mib",
+        "64",
+        "--output",
+        "/root/autodl-tmp/runtime-results/batch-graph-szyRuB/clean-host.json"
+      ],
+      "exit_code": 0,
+      "elapsed_s": 29.965882778167725
+    },
+    {
+      "name": "clean-adaptive",
+      "command": [
+        "/root/miniconda3/bin/python",
+        "-B",
+        "-m",
+        "minisgl.runtime.benchmark",
+        "--model",
+        "/root/autodl-tmp/models/hybrid-runtime/Qwen3.5-4B",
+        "--draft",
+        "/root/autodl-tmp/models/hybrid-runtime/Qwen3.5-4B-DFlash",
+        "--workload",
+        "benchmark/runtime/workloads/chat4.jsonl",
+        "--chat-template",
+        "--repeat",
+        "2",
+        "--host-cache-mib",
+        "1024",
+        "--gdn-extend",
+        "packed",
+        "--max-context",
+        "1024",
+        "--show-text",
+        "--mode",
+        "adaptive",
+        "--block-size",
+        "8",
+        "--verify-mode",
+        "sequential",
+        "--batch-size",
+        "4",
+        "--cuda-graph",
+        "--gpu-cache-mib",
+        "512",
+        "--output",
+        "/root/autodl-tmp/runtime-results/batch-graph-szyRuB/clean-adaptive.json"
+      ],
+      "exit_code": 0,
+      "elapsed_s": 22.701382398605347
+    },
+    {
+      "name": "clean-legacy",
+      "command": [
+        "/root/miniconda3/bin/python",
+        "-B",
+        "-m",
+        "minisgl.runtime.benchmark",
+        "--model",
+        "/root/autodl-tmp/models/hybrid-runtime/Qwen3.5-4B",
+        "--draft",
+        "/root/autodl-tmp/models/hybrid-runtime/Qwen3.5-4B-DFlash",
+        "--workload",
+        "benchmark/runtime/workloads/chat4.jsonl",
+        "--chat-template",
+        "--repeat",
+        "2",
+        "--host-cache-mib",
+        "1024",
+        "--gdn-extend",
+        "packed",
+        "--max-context",
+        "1024",
+        "--show-text",
+        "--mode",
+        "fixed",
+        "--block-size",
+        "8",
+        "--verify-mode",
+        "sequential",
+        "--gpu-cache-mib",
+        "512",
+        "--output",
+        "/root/autodl-tmp/runtime-results/batch-graph-szyRuB/clean-legacy.json"
+      ],
+      "exit_code": 0,
+      "elapsed_s": 46.794047594070435
+    }
+  ],
+  "graph_state": {
+    "measured": true,
+    "gpu": "NVIDIA GeForce RTX 4090",
+    "cases": [
+      {
+        "slots": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "exact_logits_features_kv_gdn": true,
+        "inactive_slots_unchanged": true,
+        "output_buffers_independent": true
+      },
+      {
+        "slots": [
+          3,
+          0,
+          2
+        ],
+        "exact_logits_features_kv_gdn": true,
+        "inactive_slots_unchanged": true,
+        "output_buffers_independent": true
+      },
+      {
+        "slots": [
+          2
+        ],
+        "exact_logits_features_kv_gdn": true,
+        "inactive_slots_unchanged": true,
+        "output_buffers_independent": true
+      },
+      {
+        "slots": [
+          1,
+          3,
+          0,
+          2
+        ],
+        "exact_logits_features_kv_gdn": true,
+        "inactive_slots_unchanged": true,
+        "output_buffers_independent": true
+      }
+    ],
+    "execution": {
+      "batch_size": 4,
+      "batching": "wave",
+      "prefill": "serial",
+      "draft": "per-request eager",
+      "cuda_graph_enabled": true,
+      "graph_scope": "target one-token decode/sequential verify",
+      "captured_batch_sizes": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "graph_replays": 8,
+      "eager_decode_calls": 4,
+      "eager_verify_calls": 0,
+      "prefill_calls": 4,
+      "decode_batch_sizes": {
+        "4": 6,
+        "3": 3,
+        "1": 3
+      },
+      "verify_batch_sizes": {}
+    }
+  },
+  "runs": [
+    {
+      "name": "clean-target",
+      "revision": "d010362f0d28dea6d017690d8c25df679220bfe2",
+      "git_dirty": false,
+      "token_parity": true,
+      "matched_requests": 8,
+      "request_count": 8,
+      "workload_sha256": "b6e5acd47fba6f1e4facbfd1d245987a746071f89add34fa644a6066c526d71a",
+      "peak_allocated_bytes": 9278933504,
+      "cache": {
+        "hits": 4,
+        "misses": 4,
+        "offloads": 0,
+        "evictions": 0,
+        "recompute_choices": 0,
+        "transfer_ms": 2.534114755690098
+      },
+      "execution": {
+        "batch_size": 4,
+        "batching": "wave",
+        "prefill": "serial",
+        "draft": "per-request eager",
+        "cuda_graph_enabled": true,
+        "graph_scope": "target one-token decode/sequential verify",
+        "captured_batch_sizes": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "graph_replays": 190,
+        "eager_decode_calls": 0,
+        "eager_verify_calls": 0,
+        "prefill_calls": 4,
+        "decode_batch_sizes": {
+          "4": 6,
+          "3": 30,
+          "2": 88,
+          "1": 66
+        },
+        "verify_batch_sizes": {}
+      },
+      "summary": {
+        "mode": "target",
+        "execution": {
+          "batch_size": 4,
+          "batching": "wave",
+          "prefill": "serial",
+          "draft": "per-request eager",
+          "cuda_graph_enabled": true,
+          "graph_scope": "target one-token decode/sequential verify",
+          "captured_batch_sizes": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "graph_replays": 190,
+          "eager_decode_calls": 0,
+          "eager_verify_calls": 0,
+          "prefill_calls": 4,
+          "decode_batch_sizes": {
+            "4": 6,
+            "3": 30,
+            "2": 88,
+            "1": 66
+          },
+          "verify_batch_sizes": {}
+        },
+        "throughput_time_basis": "wave wall time",
+        "requests": 8,
+        "output_tokens": 364,
+        "output_tokens_per_second": 156.73322721471942,
+        "decode_tokens_per_second": 158.83410877612022,
+        "mean_ttft_ms": 25.732892099767923,
+        "aggregate_tpot_ms": 6.295876922818382,
+        "mean_progress_per_round": 1.0,
+        "draft_ms": 3.9239730685949326,
+        "verify_ms": 2072.7793714031577,
+        "restore_ms": 2.7168244123458862,
+        "peak_allocated_bytes": 9278933504,
+        "cache": {
+          "hits": 4,
+          "misses": 4,
+          "offloads": 0,
+          "evictions": 0,
+          "recompute_choices": 0,
+          "transfer_ms": 2.534114755690098
+        }
+      },
+      "cache_events": [
+        {
+          "status": "miss",
+          "matched_tokens": 0,
+          "prompt_tokens": 26,
+          "tier": null,
+          "stored": true
+        },
+        {
+          "status": "miss",
+          "matched_tokens": 0,
+          "prompt_tokens": 26,
+          "tier": null,
+          "stored": true
+        },
+        {
+          "status": "miss",
+          "matched_tokens": 0,
+          "prompt_tokens": 25,
+          "tier": null,
+          "stored": true
+        },
+        {
+          "status": "miss",
+          "matched_tokens": 0,
+          "prompt_tokens": 26,
+          "tier": null,
+          "stored": true
+        },
+        {
+          "status": "hit",
+          "matched_tokens": 26,
+          "prompt_tokens": 26,
+          "tier": "gpu",
+          "stored": false
+        },
+        {
+          "status": "hit",
+          "matched_tokens": 26,
+          "prompt_tokens": 26,
+          "tier": "gpu",
+          "stored": false
+        },
+        {
+          "status": "hit",
+          "matched_tokens": 25,
+          "prompt_tokens": 25,
+          "tier": "gpu",
+          "stored": false
+        },
+        {
+          "status": "hit",
+          "matched_tokens": 26,
+          "prompt_tokens": 26,
+          "tier": "gpu",
+          "stored": false
+        }
+      ],
+      "finish_reasons": [
+        "eos",
+        "eos",
+        "length",
+        "eos",
+        "eos",
+        "eos",
+        "length",
+        "eos"
+      ]
+    },
+    {
+      "name": "clean-dflash",
+      "revision": "d010362f0d28dea6d017690d8c25df679220bfe2",
+      "git_dirty": false,
+      "token_parity": true,
+      "matched_requests": 8,
+      "request_count": 8,
+      "workload_sha256": "b6e5acd47fba6f1e4facbfd1d245987a746071f89add34fa644a6066c526d71a",
+      "peak_allocated_bytes": 10824721408,
+      "cache": {
+        "hits": 4,
+        "misses": 4,
+        "offloads": 0,
+        "evictions": 0,
+        "recompute_choices": 0,
+        "transfer_ms": 2.707831561565399
+      },
+      "execution": {
+        "batch_size": 4,
+        "batching": "wave",
+        "prefill": "serial",
+        "draft": "per-request eager",
+        "cuda_graph_enabled": true,
+        "graph_scope": "target one-token decode/sequential verify",
+        "captured_batch_sizes": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "graph_replays": 750,
+        "eager_decode_calls": 0,
+        "eager_verify_calls": 0,
+        "prefill_calls": 4,
+        "decode_batch_sizes": {
+          "4": 36,
+          "3": 72,
+          "1": 440,
+          "2": 202
+        },
+        "verify_batch_sizes": {}
+      },
+      "summary": {
+        "mode": "fixed",
+        "execution": {
+          "batch_size": 4,
+          "batching": "wave",
+          "prefill": "serial",
+          "draft": "per-request eager",
+          "cuda_graph_enabled": true,
+          "graph_scope": "target one-token decode/sequential verify",
+          "captured_batch_sizes": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "graph_replays": 750,
+          "eager_decode_calls": 0,
+          "eager_verify_calls": 0,
+          "prefill_calls": 4,
+          "decode_batch_sizes": {
+            "4": 36,
+            "3": 72,
+            "1": 440,
+            "2": 202
+          },
+          "verify_batch_sizes": {}
+        },
+        "throughput_time_basis": "wave wall time",
+        "requests": 8,
+        "output_tokens": 364,
+        "output_tokens_per_second": 37.64080231741305,
+        "decode_tokens_per_second": 37.142907184806376,
+        "mean_ttft_ms": 27.101762010715902,
+        "aggregate_tpot_ms": 26.923040650115254,
+        "mean_progress_per_round": 2.870967741935484,
+        "draft_ms": 1353.8910383358598,
+        "verify_ms": 6144.865266978741,
+        "restore_ms": 1980.5549308657646,
+        "peak_allocated_bytes": 10824721408,
+        "cache": {
+          "hits": 4,
+          "misses": 4,
+          "offloads": 0,
+          "evictions": 0,
+          "recompute_choices": 0,
+          "transfer_ms": 2.707831561565399
+        }
+      },
+      "cache_events": [
+        {
+          "status": "miss",
+          "matched_tokens": 0,
+          "prompt_tokens": 26,
+          "tier": null,
+          "stored": true
+        },
+        {
+          "status": "miss",
+          "matched_tokens": 0,
+          "prompt_tokens": 26,
+          "tier": null,
+          "stored": true
+        },
+        {
+          "status": "miss",
+          "matched_tokens": 0,
+          "prompt_tokens": 25,
+          "tier": null,
+          "stored": true
+        },
+        {
+          "status": "miss",
+          "matched_tokens": 0,
+          "prompt_tokens": 26,
+          "tier": null,
+          "stored": true
+        },
+        {
+          "status": "hit",
+          "matched_tokens": 26,
+          "prompt_tokens": 26,
+          "tier": "gpu",
+          "stored": false
+        },
+        {
+          "status": "hit",
+          "matched_tokens": 26,
+          "prompt_tokens": 26,
+          "tier": "gpu",
+          "stored": false
+        },
+        {
+          "status": "hit",
+          "matched_tokens": 25,
+          "prompt_tokens": 25,
+          "tier": "gpu",
+          "stored": false
+        },
+        {
+          "status": "hit",
+          "matched_tokens": 26,
+          "prompt_tokens": 26,
+          "tier": "gpu",
+          "stored": false
+        }
+      ],
+      "finish_reasons": [
+        "eos",
+        "eos",
+        "length",
+        "eos",
+        "eos",
+        "eos",
+        "length",
+        "eos"
+      ]
+    },
+    {
+      "name": "clean-host",
+      "revision": "d010362f0d28dea6d017690d8c25df679220bfe2",
+      "git_dirty": false,
+      "token_parity": true,
+      "matched_requests": 8,
+      "request_count": 8,
+      "workload_sha256": "b6e5acd47fba6f1e4facbfd1d245987a746071f89add34fa644a6066c526d71a",
+      "peak_allocated_bytes": 10662104064,
+      "cache": {
+        "hits": 4,
+        "misses": 4,
+        "offloads": 3,
+        "evictions": 0,
+        "recompute_choices": 0,
+        "transfer_ms": 102.98844985663891
+      },
+      "execution": {
+        "batch_size": 4,
+        "batching": "wave",
+        "prefill": "serial",
+        "draft": "per-request eager",
+        "cuda_graph_enabled": true,
+        "graph_scope": "target one-token decode/sequential verify",
+        "captured_batch_sizes": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "graph_replays": 750,
+        "eager_decode_calls": 0,
+        "eager_verify_calls": 0,
+        "prefill_calls": 4,
+        "decode_batch_sizes": {
+          "4": 36,
+          "3": 72,
+          "1": 440,
+          "2": 202
+        },
+        "verify_batch_sizes": {}
+      },
+      "summary": {
+        "mode": "fixed",
+        "execution": {
+          "batch_size": 4,
+          "batching": "wave",
+          "prefill": "serial",
+          "draft": "per-request eager",
+          "cuda_graph_enabled": true,
+          "graph_scope": "target one-token decode/sequential verify",
+          "captured_batch_sizes": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "graph_replays": 750,
+          "eager_decode_calls": 0,
+          "eager_verify_calls": 0,
+          "prefill_calls": 4,
+          "decode_batch_sizes": {
+            "4": 36,
+            "3": 72,
+            "1": 440,
+            "2": 202
+          },
+          "verify_batch_sizes": {}
+        },
+        "throughput_time_basis": "wave wall time",
+        "requests": 8,
+        "output_tokens": 364,
+        "output_tokens_per_second": 38.73439077034311,
+        "decode_tokens_per_second": 38.629972886361934,
+        "mean_ttft_ms": 51.14340293221176,
+        "aggregate_tpot_ms": 25.88663478852825,
+        "mean_progress_per_round": 2.870967741935484,
+        "draft_ms": 1131.8048303946853,
+        "verify_ms": 6086.414781399071,
+        "restore_ms": 1916.3568941876292,
+        "peak_allocated_bytes": 10662104064,
+        "cache": {
+          "hits": 4,
+          "misses": 4,
+          "offloads": 3,
+          "evictions": 0,
+          "recompute_choices": 0,
+          "transfer_ms": 102.98844985663891
+        }
+      },
+      "cache_events": [
+        {
+          "status": "miss",
+          "matched_tokens": 0,
+          "prompt_tokens": 26,
+          "tier": null,
+          "stored": true
+        },
+        {
+          "status": "miss",
+          "matched_tokens": 0,
+          "prompt_tokens": 26,
+          "tier": null,
+          "stored": true
+        },
+        {
+          "status": "miss",
+          "matched_tokens": 0,
+          "prompt_tokens": 25,
+          "tier": null,
+          "stored": true
+        },
+        {
+          "status": "miss",
+          "matched_tokens": 0,
+          "prompt_tokens": 26,
+          "tier": null,
+          "stored": true
+        },
+        {
+          "status": "hit",
+          "matched_tokens": 26,
+          "prompt_tokens": 26,
+          "tier": "cpu",
+          "stored": false
+        },
+        {
+          "status": "hit",
+          "matched_tokens": 26,
+          "prompt_tokens": 26,
+          "tier": "cpu",
+          "stored": false
+        },
+        {
+          "status": "hit",
+          "matched_tokens": 25,
+          "prompt_tokens": 25,
+          "tier": "cpu",
+          "stored": false
+        },
+        {
+          "status": "hit",
+          "matched_tokens": 26,
+          "prompt_tokens": 26,
+          "tier": "gpu",
+          "stored": false
+        }
+      ],
+      "finish_reasons": [
+        "eos",
+        "eos",
+        "length",
+        "eos",
+        "eos",
+        "eos",
+        "length",
+        "eos"
+      ]
+    },
+    {
+      "name": "clean-adaptive",
+      "revision": "d010362f0d28dea6d017690d8c25df679220bfe2",
+      "git_dirty": false,
+      "token_parity": true,
+      "matched_requests": 8,
+      "request_count": 8,
+      "workload_sha256": "b6e5acd47fba6f1e4facbfd1d245987a746071f89add34fa644a6066c526d71a",
+      "peak_allocated_bytes": 10824426496,
+      "cache": {
+        "hits": 4,
+        "misses": 4,
+        "offloads": 0,
+        "evictions": 0,
+        "recompute_choices": 0,
+        "transfer_ms": 2.453453838825226
+      },
+      "execution": {
+        "batch_size": 4,
+        "batching": "wave",
+        "prefill": "serial",
+        "draft": "per-request eager",
+        "cuda_graph_enabled": true,
+        "graph_scope": "target one-token decode/sequential verify",
+        "captured_batch_sizes": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "graph_replays": 366,
+        "eager_decode_calls": 0,
+        "eager_verify_calls": 0,
+        "prefill_calls": 4,
+        "decode_batch_sizes": {
+          "4": 15,
+          "3": 38,
+          "1": 208,
+          "2": 105
+        },
+        "verify_batch_sizes": {}
+      },
+      "summary": {
+        "mode": "adaptive",
+        "execution": {
+          "batch_size": 4,
+          "batching": "wave",
+          "prefill": "serial",
+          "draft": "per-request eager",
+          "cuda_graph_enabled": true,
+          "graph_scope": "target one-token decode/sequential verify",
+          "captured_batch_sizes": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "graph_replays": 366,
+          "eager_decode_calls": 0,
+          "eager_verify_calls": 0,
+          "prefill_calls": 4,
+          "decode_batch_sizes": {
+            "4": 15,
+            "3": 38,
+            "1": 208,
+            "2": 105
+          },
+          "verify_batch_sizes": {}
+        },
+        "throughput_time_basis": "wave wall time",
+        "requests": 8,
+        "output_tokens": 364,
+        "output_tokens_per_second": 73.69553390386426,
+        "decode_tokens_per_second": 73.27464707980542,
+        "mean_ttft_ms": 25.498224305920303,
+        "aggregate_tpot_ms": 13.647285109553277,
+        "mean_progress_per_round": 1.679245283018868,
+        "draft_ms": 806.9908125326037,
+        "verify_ms": 3198.5045643523335,
+        "restore_ms": 745.9804341197014,
+        "peak_allocated_bytes": 10824426496,
+        "cache": {
+          "hits": 4,
+          "misses": 4,
+          "offloads": 0,
+          "evictions": 0,
+          "recompute_choices": 0,
+          "transfer_ms": 2.453453838825226
+        }
+      },
+      "cache_events": [
+        {
+          "status": "miss",
+          "matched_tokens": 0,
+          "prompt_tokens": 26,
+          "tier": null,
+          "stored": true
+        },
+        {
+          "status": "miss",
+          "matched_tokens": 0,
+          "prompt_tokens": 26,
+          "tier": null,
+          "stored": true
+        },
+        {
+          "status": "miss",
+          "matched_tokens": 0,
+          "prompt_tokens": 25,
+          "tier": null,
+          "stored": true
+        },
+        {
+          "status": "miss",
+          "matched_tokens": 0,
+          "prompt_tokens": 26,
+          "tier": null,
+          "stored": true
+        },
+        {
+          "status": "hit",
+          "matched_tokens": 26,
+          "prompt_tokens": 26,
+          "tier": "gpu",
+          "stored": false
+        },
+        {
+          "status": "hit",
+          "matched_tokens": 26,
+          "prompt_tokens": 26,
+          "tier": "gpu",
+          "stored": false
+        },
+        {
+          "status": "hit",
+          "matched_tokens": 25,
+          "prompt_tokens": 25,
+          "tier": "gpu",
+          "stored": false
+        },
+        {
+          "status": "hit",
+          "matched_tokens": 26,
+          "prompt_tokens": 26,
+          "tier": "gpu",
+          "stored": false
+        }
+      ],
+      "finish_reasons": [
+        "eos",
+        "eos",
+        "length",
+        "eos",
+        "eos",
+        "eos",
+        "length",
+        "eos"
+      ]
+    },
+    {
+      "name": "clean-legacy",
+      "revision": "d010362f0d28dea6d017690d8c25df679220bfe2",
+      "git_dirty": false,
+      "token_parity": true,
+      "matched_requests": 8,
+      "request_count": 8,
+      "workload_sha256": "b6e5acd47fba6f1e4facbfd1d245987a746071f89add34fa644a6066c526d71a",
+      "peak_allocated_bytes": 10385756672,
+      "cache": {
+        "hits": 4,
+        "misses": 4,
+        "offloads": 0,
+        "evictions": 0,
+        "recompute_choices": 0,
+        "transfer_ms": 2.3858528584241867
+      },
+      "execution": {
+        "batch_size": 1,
+        "batching": "serial legacy",
+        "cuda_graph_enabled": false,
+        "graph_replays": 0
+      },
+      "summary": {
+        "mode": "fixed",
+        "execution": {
+          "batch_size": 1,
+          "batching": "serial legacy",
+          "cuda_graph_enabled": false,
+          "graph_replays": 0
+        },
+        "throughput_time_basis": "serial request time",
+        "requests": 8,
+        "output_tokens": 364,
+        "output_tokens_per_second": 14.187972119699852,
+        "decode_tokens_per_second": 13.928285072197994,
+        "mean_ttft_ms": 12.004260905086994,
+        "aggregate_tpot_ms": 71.79634785018024,
+        "mean_progress_per_round": 2.870967741935484,
+        "draft_ms": 1243.2964453473687,
+        "verify_ms": 19093.61810889095,
+        "restore_ms": 5144.903432577848,
+        "peak_allocated_bytes": 10385756672,
+        "cache": {
+          "hits": 4,
+          "misses": 4,
+          "offloads": 0,
+          "evictions": 0,
+          "recompute_choices": 0,
+          "transfer_ms": 2.3858528584241867
+        }
+      },
+      "cache_events": [
+        {
+          "status": "miss",
+          "matched_tokens": 0,
+          "prompt_tokens": 26,
+          "tier": null,
+          "stored": true
+        },
+        {
+          "status": "miss",
+          "matched_tokens": 0,
+          "prompt_tokens": 26,
+          "tier": null,
+          "stored": true
+        },
+        {
+          "status": "miss",
+          "matched_tokens": 0,
+          "prompt_tokens": 25,
+          "tier": null,
+          "stored": true
+        },
+        {
+          "status": "miss",
+          "matched_tokens": 0,
+          "prompt_tokens": 26,
+          "tier": null,
+          "stored": true
+        },
+        {
+          "status": "hit",
+          "matched_tokens": 26,
+          "prompt_tokens": 26,
+          "tier": "gpu",
+          "stored": false
+        },
+        {
+          "status": "hit",
+          "matched_tokens": 26,
+          "prompt_tokens": 26,
+          "tier": "gpu",
+          "stored": false
+        },
+        {
+          "status": "hit",
+          "matched_tokens": 25,
+          "prompt_tokens": 25,
+          "tier": "gpu",
+          "stored": false
+        },
+        {
+          "status": "hit",
+          "matched_tokens": 26,
+          "prompt_tokens": 26,
+          "tier": "gpu",
+          "stored": false
+        }
+      ],
+      "finish_reasons": [
+        "eos",
+        "eos",
+        "length",
+        "eos",
+        "eos",
+        "eos",
+        "length",
+        "eos"
+      ]
+    },
+    {
+      "name": "target-eager",
+      "revision": "0eee604963e6b451c41b4825cac918fda0bf7352",
+      "git_dirty": true,
+      "token_parity": true,
+      "matched_requests": 4,
+      "request_count": 4,
+      "workload_sha256": "c38cd8c15c22a4220e53614f6831a8f699eafe39578cc1bbd13f638d0b9544d2",
+      "peak_allocated_bytes": 9062481408,
+      "cache": {
+        "hits": 0,
+        "misses": 0,
+        "offloads": 0,
+        "evictions": 0,
+        "recompute_choices": 0,
+        "transfer_ms": 0.0
+      },
+      "execution": {
+        "batch_size": 4,
+        "batching": "wave",
+        "prefill": "serial",
+        "draft": "per-request eager",
+        "cuda_graph_enabled": false,
+        "graph_scope": "target one-token decode/sequential verify",
+        "captured_batch_sizes": [],
+        "graph_replays": 0,
+        "eager_decode_calls": 95,
+        "eager_verify_calls": 0,
+        "prefill_calls": 4,
+        "decode_batch_sizes": {
+          "4": 3,
+          "3": 15,
+          "2": 44,
+          "1": 33
+        },
+        "verify_batch_sizes": {}
+      },
+      "summary": {
+        "mode": "target",
+        "execution": {
+          "batch_size": 4,
+          "batching": "wave",
+          "prefill": "serial",
+          "draft": "per-request eager",
+          "cuda_graph_enabled": false,
+          "graph_scope": "target one-token decode/sequential verify",
+          "captured_batch_sizes": [],
+          "graph_replays": 0,
+          "eager_decode_calls": 95,
+          "eager_verify_calls": 0,
+          "prefill_calls": 4,
+          "decode_batch_sizes": {
+            "4": 3,
+            "3": 15,
+            "2": 44,
+            "1": 33
+          },
+          "verify_batch_sizes": {}
+        },
+        "throughput_time_basis": "wave wall time",
+        "requests": 4,
+        "output_tokens": 182,
+        "output_tokens_per_second": 86.74824568240376,
+        "decode_tokens_per_second": 88.23364320874852,
+        "mean_ttft_ms": 51.84933450073004,
+        "aggregate_tpot_ms": 11.33354538737723,
+        "mean_progress_per_round": 1.0,
+        "draft_ms": 2.2532641887664795,
+        "verify_ms": 1927.2008705884218,
+        "restore_ms": 1.411091536283493,
+        "peak_allocated_bytes": 9062481408,
+        "cache": {
+          "hits": 0,
+          "misses": 0,
+          "offloads": 0,
+          "evictions": 0,
+          "recompute_choices": 0,
+          "transfer_ms": 0.0
+        }
+      }
+    },
+    {
+      "name": "target-graph",
+      "revision": "0eee604963e6b451c41b4825cac918fda0bf7352",
+      "git_dirty": true,
+      "token_parity": true,
+      "matched_requests": 4,
+      "request_count": 4,
+      "workload_sha256": "c38cd8c15c22a4220e53614f6831a8f699eafe39578cc1bbd13f638d0b9544d2",
+      "peak_allocated_bytes": 9064581632,
+      "cache": {
+        "hits": 0,
+        "misses": 0,
+        "offloads": 0,
+        "evictions": 0,
+        "recompute_choices": 0,
+        "transfer_ms": 0.0
+      },
+      "execution": {
+        "batch_size": 4,
+        "batching": "wave",
+        "prefill": "serial",
+        "draft": "per-request eager",
+        "cuda_graph_enabled": true,
+        "graph_scope": "target one-token decode/sequential verify",
+        "captured_batch_sizes": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "graph_replays": 95,
+        "eager_decode_calls": 0,
+        "eager_verify_calls": 0,
+        "prefill_calls": 4,
+        "decode_batch_sizes": {
+          "4": 3,
+          "3": 15,
+          "2": 44,
+          "1": 33
+        },
+        "verify_batch_sizes": {}
+      },
+      "summary": {
+        "mode": "target",
+        "execution": {
+          "batch_size": 4,
+          "batching": "wave",
+          "prefill": "serial",
+          "draft": "per-request eager",
+          "cuda_graph_enabled": true,
+          "graph_scope": "target one-token decode/sequential verify",
+          "captured_batch_sizes": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "graph_replays": 95,
+          "eager_decode_calls": 0,
+          "eager_verify_calls": 0,
+          "prefill_calls": 4,
+          "decode_batch_sizes": {
+            "4": 3,
+            "3": 15,
+            "2": 44,
+            "1": 33
+          },
+          "verify_batch_sizes": {}
+        },
+        "throughput_time_basis": "wave wall time",
+        "requests": 4,
+        "output_tokens": 182,
+        "output_tokens_per_second": 148.81006936159653,
+        "decode_tokens_per_second": 157.07098210132668,
+        "mean_ttft_ms": 58.86732111684978,
+        "aggregate_tpot_ms": 6.366548337712047,
+        "mean_progress_per_round": 1.0,
+        "draft_ms": 2.2049518302083015,
+        "verify_ms": 1041.5105549618602,
+        "restore_ms": 1.4626877382397652,
+        "peak_allocated_bytes": 9064581632,
+        "cache": {
+          "hits": 0,
+          "misses": 0,
+          "offloads": 0,
+          "evictions": 0,
+          "recompute_choices": 0,
+          "transfer_ms": 0.0
+        }
+      }
+    },
+    {
+      "name": "dflash-seq-eager-cache",
+      "revision": "0eee604963e6b451c41b4825cac918fda0bf7352",
+      "git_dirty": true,
+      "token_parity": true,
+      "matched_requests": 8,
+      "request_count": 8,
+      "workload_sha256": "b6e5acd47fba6f1e4facbfd1d245987a746071f89add34fa644a6066c526d71a",
+      "peak_allocated_bytes": 10820504576,
+      "cache": {
+        "hits": 4,
+        "misses": 4,
+        "offloads": 0,
+        "evictions": 0,
+        "recompute_choices": 0,
+        "transfer_ms": 2.429612912237644
+      },
+      "execution": {
+        "batch_size": 4,
+        "batching": "wave",
+        "prefill": "serial",
+        "draft": "per-request eager",
+        "cuda_graph_enabled": false,
+        "graph_scope": "target one-token decode/sequential verify",
+        "captured_batch_sizes": [],
+        "graph_replays": 0,
+        "eager_decode_calls": 750,
+        "eager_verify_calls": 0,
+        "prefill_calls": 4,
+        "decode_batch_sizes": {
+          "4": 36,
+          "3": 72,
+          "1": 440,
+          "2": 202
+        },
+        "verify_batch_sizes": {}
+      },
+      "summary": {
+        "mode": "fixed",
+        "execution": {
+          "batch_size": 4,
+          "batching": "wave",
+          "prefill": "serial",
+          "draft": "per-request eager",
+          "cuda_graph_enabled": false,
+          "graph_scope": "target one-token decode/sequential verify",
+          "captured_batch_sizes": [],
+          "graph_replays": 0,
+          "eager_decode_calls": 750,
+          "eager_verify_calls": 0,
+          "prefill_calls": 4,
+          "decode_batch_sizes": {
+            "4": 36,
+            "3": 72,
+            "1": 440,
+            "2": 202
+          },
+          "verify_batch_sizes": {}
+        },
+        "throughput_time_basis": "wave wall time",
+        "requests": 8,
+        "output_tokens": 364,
+        "output_tokens_per_second": 24.44136787601969,
+        "decode_tokens_per_second": 24.035192589226924,
+        "mean_ttft_ms": 25.58026695623994,
+        "aggregate_tpot_ms": 41.605657882193164,
+        "mean_progress_per_round": 2.870967741935484,
+        "draft_ms": 1158.706865273416,
+        "verify_ms": 10336.258403025568,
+        "restore_ms": 3242.344990372658,
+        "peak_allocated_bytes": 10820504576,
+        "cache": {
+          "hits": 4,
+          "misses": 4,
+          "offloads": 0,
+          "evictions": 0,
+          "recompute_choices": 0,
+          "transfer_ms": 2.429612912237644
+        }
+      }
+    },
+    {
+      "name": "dflash-seq-graph-cache",
+      "revision": "0eee604963e6b451c41b4825cac918fda0bf7352",
+      "git_dirty": true,
+      "token_parity": true,
+      "matched_requests": 8,
+      "request_count": 8,
+      "workload_sha256": "b6e5acd47fba6f1e4facbfd1d245987a746071f89add34fa644a6066c526d71a",
+      "peak_allocated_bytes": 10824721408,
+      "cache": {
+        "hits": 4,
+        "misses": 4,
+        "offloads": 0,
+        "evictions": 0,
+        "recompute_choices": 0,
+        "transfer_ms": 2.4750661104917526
+      },
+      "execution": {
+        "batch_size": 4,
+        "batching": "wave",
+        "prefill": "serial",
+        "draft": "per-request eager",
+        "cuda_graph_enabled": true,
+        "graph_scope": "target one-token decode/sequential verify",
+        "captured_batch_sizes": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "graph_replays": 750,
+        "eager_decode_calls": 0,
+        "eager_verify_calls": 0,
+        "prefill_calls": 4,
+        "decode_batch_sizes": {
+          "4": 36,
+          "3": 72,
+          "1": 440,
+          "2": 202
+        },
+        "verify_batch_sizes": {}
+      },
+      "summary": {
+        "mode": "fixed",
+        "execution": {
+          "batch_size": 4,
+          "batching": "wave",
+          "prefill": "serial",
+          "draft": "per-request eager",
+          "cuda_graph_enabled": true,
+          "graph_scope": "target one-token decode/sequential verify",
+          "captured_batch_sizes": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "graph_replays": 750,
+          "eager_decode_calls": 0,
+          "eager_verify_calls": 0,
+          "prefill_calls": 4,
+          "decode_batch_sizes": {
+            "4": 36,
+            "3": 72,
+            "1": 440,
+            "2": 202
+          },
+          "verify_batch_sizes": {}
+        },
+        "throughput_time_basis": "wave wall time",
+        "requests": 8,
+        "output_tokens": 364,
+        "output_tokens_per_second": 39.324660300134866,
+        "decode_tokens_per_second": 38.80691450860904,
+        "mean_ttft_ms": 26.041875826194882,
+        "aggregate_tpot_ms": 25.768603679588,
+        "mean_progress_per_round": 2.870967741935484,
+        "draft_ms": 1110.3648813441396,
+        "verify_ms": 6078.539738431573,
+        "restore_ms": 1913.481941446662,
+        "peak_allocated_bytes": 10824721408,
+        "cache": {
+          "hits": 4,
+          "misses": 4,
+          "offloads": 0,
+          "evictions": 0,
+          "recompute_choices": 0,
+          "transfer_ms": 2.4750661104917526
+        }
+      }
+    },
+    {
+      "name": "dflash-parallel-graph-cache",
+      "revision": "0eee604963e6b451c41b4825cac918fda0bf7352",
+      "git_dirty": true,
+      "token_parity": true,
+      "matched_requests": 8,
+      "request_count": 8,
+      "workload_sha256": "b6e5acd47fba6f1e4facbfd1d245987a746071f89add34fa644a6066c526d71a",
+      "peak_allocated_bytes": 10832108032,
+      "cache": {
+        "hits": 4,
+        "misses": 4,
+        "offloads": 0,
+        "evictions": 0,
+        "recompute_choices": 0,
+        "transfer_ms": 2.501864917576313
+      },
+      "execution": {
+        "batch_size": 4,
+        "batching": "wave",
+        "prefill": "serial",
+        "draft": "per-request eager",
+        "cuda_graph_enabled": true,
+        "graph_scope": "target one-token decode/sequential verify",
+        "captured_batch_sizes": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "graph_replays": 28,
+        "eager_decode_calls": 0,
+        "eager_verify_calls": 116,
+        "prefill_calls": 4,
+        "decode_batch_sizes": {
+          "3": 2,
+          "1": 26
+        },
+        "verify_batch_sizes": {
+          "4": 6,
+          "3": 12,
+          "2": 40,
+          "1": 58
+        }
+      },
+      "summary": {
+        "mode": "fixed",
+        "execution": {
+          "batch_size": 4,
+          "batching": "wave",
+          "prefill": "serial",
+          "draft": "per-request eager",
+          "cuda_graph_enabled": true,
+          "graph_scope": "target one-token decode/sequential verify",
+          "captured_batch_sizes": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "graph_replays": 28,
+          "eager_decode_calls": 0,
+          "eager_verify_calls": 116,
+          "prefill_calls": 4,
+          "decode_batch_sizes": {
+            "3": 2,
+            "1": 26
+          },
+          "verify_batch_sizes": {
+            "4": 6,
+            "3": 12,
+            "2": 40,
+            "1": 58
+          }
+        },
+        "throughput_time_basis": "wave wall time",
+        "requests": 8,
+        "output_tokens": 364,
+        "output_tokens_per_second": 62.53151020038274,
+        "decode_tokens_per_second": 62.094448141679564,
+        "mean_ttft_ms": 27.38219127058983,
+        "aggregate_tpot_ms": 16.10449935424696,
+        "mean_progress_per_round": 2.870967741935484,
+        "draft_ms": 1669.3881191313267,
+        "verify_ms": 2129.0514022111893,
+        "restore_ms": 1819.7025330737233,
+        "peak_allocated_bytes": 10832108032,
+        "cache": {
+          "hits": 4,
+          "misses": 4,
+          "offloads": 0,
+          "evictions": 0,
+          "recompute_choices": 0,
+          "transfer_ms": 2.501864917576313
+        }
+      }
+    }
+  ],
+  "limitations": [
+    "Four-question fixture only; broader BF16 parity is not established.",
+    "Graphs cover target one-token decode/sequential verification only.",
+    "Prefills and draft proposals are serial within each wave; this is not continuous batching.",
+    "Timing observations are single runs, not a production speedup claim."
+  ]
+}

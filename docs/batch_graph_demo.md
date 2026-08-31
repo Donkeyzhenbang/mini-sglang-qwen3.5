@@ -116,3 +116,19 @@ ragged lengths, full/partial acceptance, rejection, EOS, slot reuse, adaptive
 blocks, shared draft weights with isolated KV, effective workload hashes, and
 wave wall-time accounting. Neither these tests nor one four-chat workload proves
 all-context correctness or a DFlash speedup.
+
+## Measured 2026-08-31 results
+
+Code revision: `d010362f0d28dea6d017690d8c25df679220bfe2`; 54 CPU/GPU tests passed. All five clean runs recorded `git_dirty=false`. [Machine-readable results and exact commands](batch_graph_results_2026-08-31.json).
+
+| Run | Requests matching target | Hits / misses | Offloads | Graph replays |
+|---|---:|---:|---:|---:|
+| clean-target | 8/8 | 4 / 4 | 0 | 190 |
+| clean-dflash | 8/8 | 4 / 4 | 0 | 750 |
+| clean-host | 8/8 | 4 / 4 | 3 | 750 |
+| clean-adaptive | 8/8 | 4 / 4 | 0 | 366 |
+| clean-legacy | 8/8 | 4 / 4 | 0 | 0 |
+
+The clean-host run uses a 64 MiB GPU cache: second-wave hits are three CPU entries and one GPU entry. The other clean cached runs use 512 MiB GPU cache. All use 1024 MiB host cache. These are correctness and feature demonstrations, not statistically controlled speedup claims.
+
+During initialization the service graph runner first logs that it is disabled. With `--cuda-graph`, the experimental executor then logs `Start capturing CUDA graphs with sizes: [1, 2, 3, 4]`. The final `execution.graph_replays` is the measured usage counter.
