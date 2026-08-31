@@ -1,12 +1,12 @@
-"""Wave batching for the experimental target; draft proposals remain per-request.
+"""Batched prefill, draft and target verification for isolated request slots.
 
-All live requests share a target forward. Prefills are serialized to support
-complete hybrid prefix restoration. CUDA graphs cover decode (one token per
+All live requests share model forwards. CUDA graphs cover decode (one token per
 request), including sequential verification; multi-token verification is eager.
 """
 
 from __future__ import annotations
 
+import time
 from collections import Counter
 
 import torch
@@ -48,6 +48,8 @@ class BatchedTargetExecutor:
         self.max_batch = max_batch
         self.decode_model = _DecodeModel(engine, taps, max_batch)
         self.graph_enabled = cuda_graph
+        self.batching = "wave"
+        engine.attn_backend.gdn_backend.packed_verify_conv = True
         self.reset_stats()
         if cuda_graph:
             # The service graph cannot export draft features. Capture a decode
@@ -75,22 +77,30 @@ class BatchedTargetExecutor:
         self.eager_decode_calls = 0
         self.eager_verify_calls = 0
         self.prefill_calls = 0
+        self.draft_calls = 0
+        self.prefill_batch_sizes = Counter()
+        self.draft_batch_sizes = Counter()
         self.decode_batch_sizes = Counter()
         self.verify_batch_sizes = Counter()
 
     def stats(self):
         return dict(
             batch_size=self.max_batch,
-            batching="wave",
-            prefill="serial",
-            draft="per-request eager",
+            batching=self.batching,
+            prefill="batched ragged suffixes; per-request cache restoration",
+            draft="batched padded ragged contexts",
             cuda_graph_enabled=self.graph_enabled,
             graph_scope="target one-token decode/sequential verify",
+            packed_gdn_verify_convolution=self.engine.attn_backend.gdn_backend.extend_backend
+            == "packed",
             captured_batch_sizes=self.engine.graph_runner.graph_bs_list,
             graph_replays=self.graph_replays,
             eager_decode_calls=self.eager_decode_calls,
             eager_verify_calls=self.eager_verify_calls,
             prefill_calls=self.prefill_calls,
+            draft_calls=self.draft_calls,
+            prefill_batch_sizes=dict(self.prefill_batch_sizes),
+            draft_batch_sizes=dict(self.draft_batch_sizes),
             decode_batch_sizes=dict(self.decode_batch_sizes),
             verify_batch_sizes=dict(self.verify_batch_sizes),
         )
@@ -99,8 +109,6 @@ class BatchedTargetExecutor:
     def forward(self, items, *, prefill=False):
         if not items or len(items) > self.max_batch:
             raise ValueError("Invalid target batch size")
-        if prefill and len(items) != 1:
-            raise ValueError("Hybrid prefix restoration uses serial prefills")
         if len({t.slot for t, _ in items}) != len(items):
             raise ValueError("A batch cannot write the same request state twice")
         decode = not prefill and all(len(tokens) == 1 for _, tokens in items)
@@ -157,12 +165,19 @@ class BatchedTargetExecutor:
                     hidden = self.engine.model.model.forward(batch.input_ids, self.taps)
                     features = self.engine.model.model._last_aux_hidden
                     self.engine.model.model._last_aux_hidden = None
-                    # Prefills are serial and need only their last logits.
-                    logits = F.linear(
-                        hidden[-1:] if prefill else hidden, self.decode_model.head
-                    ).float()
+                    # Project only the last prompt token of each request.
+                    if prefill:
+                        ends = (
+                            torch.tensor(
+                                [len(tokens) for _, tokens in items], device=hidden.device
+                            ).cumsum(0)
+                            - 1
+                        )
+                        hidden = hidden.index_select(0, ends)
+                    logits = F.linear(hidden, self.decode_model.head).float()
                     if prefill:
                         self.prefill_calls += 1
+                        self.prefill_batch_sizes[len(items)] += 1
                     elif decode:
                         self.eager_decode_calls += 1
                     else:
@@ -172,33 +187,126 @@ class BatchedTargetExecutor:
             elif not prefill:
                 self.verify_batch_sizes[len(items)] += 1
             outputs, offset = [], 0
-            for (target, tokens), history in zip(items, histories):
+            for i, ((target, tokens), history) in enumerate(zip(items, histories)):
                 target.history = history
                 count = len(tokens)
                 outputs.append(
                     (
-                        logits if prefill else logits[offset : offset + count],
+                        logits[i : i + 1] if prefill else logits[offset : offset + count],
                         features[offset : offset + count] if features is not None else None,
                     )
                 )
                 offset += count
         return outputs
 
+    @torch.inference_mode()
+    def prefill(self, targets, prompts):
+        states = [t.prepare_prefill(p) for t, p in zip(targets, prompts)]
+        pending = [
+            (i, t, p[t.length :])
+            for i, (t, p) in enumerate(zip(targets, prompts))
+            if t.length < len(p)
+        ]
+        start = time.perf_counter()
+        computed = (
+            self.forward([(t, suffix) for _, t, suffix in pending], prefill=True) if pending else []
+        )
+        targets[0].synchronize()
+        elapsed = (time.perf_counter() - start) * 1000
+        total_tokens = sum(len(suffix) for _, _, suffix in pending)
+        results = {
+            i: (result, elapsed * len(suffix) / total_tokens)
+            for (i, _, suffix), result in zip(pending, computed)
+        }
+        with torch.cuda.stream(self.engine.stream):
+            tokens = [
+                t.finish_prefill(p, state, *results.get(i, (None, 0)))
+                for i, (t, p, state) in enumerate(zip(targets, prompts, states))
+            ]
+            return torch.stack(tokens).tolist()
+
+    @torch.inference_mode()
+    def propose(self, items):
+        from .batch_draft import propose_batch
+
+        with torch.cuda.stream(self.engine.stream):
+            rows = [
+                (d, torch.cat(t.pending_features).unsqueeze(0), anchor, size, t.length)
+                for t, d, anchor, size in items
+            ]
+            result = propose_batch(rows, items[0][0].embedding, items[0][0].head)
+            for t, _, _, _ in items:
+                t.pending_features.clear()
+        self.draft_calls += 1
+        self.draft_batch_sizes[len(items)] += 1
+        return result
+
+    @torch.inference_mode()
+    def checkpoint(self, targets):
+        from .target import TargetCheckpoint
+
+        with torch.cuda.stream(self.engine.stream):
+            slots = torch.tensor([t.slot for t in targets], device=self.engine.device)
+            states = {
+                lid: (rt.conv_cache.index_select(0, slots), rt.ssm_cache.index_select(0, slots))
+                for lid, rt in self.engine.attn_backend.gdn_backend._runtime.items()
+            }
+            return [
+                TargetCheckpoint(
+                    list(t.history), {lid: (conv[i], ssm[i]) for lid, (conv, ssm) in states.items()}
+                )
+                for i, t in enumerate(targets)
+            ]
+
+    @torch.inference_mode()
+    def restore(self, items):
+        with torch.cuda.stream(self.engine.stream):
+            slots = torch.tensor([t.slot for t, _ in items], device=self.engine.device)
+            for lid, rt in self.engine.attn_backend.gdn_backend._runtime.items():
+                rt.conv_cache.index_copy_(
+                    0, slots, torch.stack([saved.states[lid][0] for _, saved in items])
+                )
+                rt.ssm_cache.index_copy_(
+                    0, slots, torch.stack([saved.states[lid][1] for _, saved in items])
+                )
+            for target, saved in items:
+                target.history = list(saved.history)
+
+    def feasible_blocks(self, targets, candidates):
+        # All slots share one allocator and cache budget. Use the longest
+        # context conservatively instead of querying CUDA memory per request.
+        target = max(targets, key=lambda t: t.length)
+        return target.feasible_blocks(target.length, candidates, batch_size=len(targets))
+
     def verify(self, items, *, sequential):
         if not sequential:
-            return [
-                (logits.argmax(-1).tolist(), features) for logits, features in self.forward(items)
-            ]
+            with torch.cuda.stream(self.engine.stream):
+                result = self.forward(items)
+                predictions = torch.cat([logits.argmax(-1) for logits, _ in result]).tolist()
+                outputs, offset = [], 0
+                for logits, features in result:
+                    n = len(logits)
+                    outputs.append((predictions[offset : offset + n], features))
+                    offset += n
+                return outputs
         outputs = [[] for _ in items]
         for position in range(max(len(tokens) for _, tokens in items)):
             indices = [i for i, (_, tokens) in enumerate(items) if position < len(tokens)]
             steps = [(items[i][0], [items[i][1][position]]) for i in indices]
             for i, result in zip(indices, self.forward(steps)):
                 outputs[i].append(result)
-        return [
-            (
-                torch.cat([x[0] for x in row]).argmax(-1).tolist(),
-                torch.cat([x[1] for x in row]) if row[0][1] is not None else None,
-            )
-            for row in outputs
-        ]
+        with torch.cuda.stream(self.engine.stream):
+            predictions = torch.cat(
+                [torch.cat([x[0] for x in row]).argmax(-1) for row in outputs]
+            ).tolist()
+            result, offset = [], 0
+            for row in outputs:
+                n = len(row)
+                result.append(
+                    (
+                        predictions[offset : offset + n],
+                        torch.cat([x[1] for x in row]) if row[0][1] is not None else None,
+                    )
+                )
+                offset += n
+            return result

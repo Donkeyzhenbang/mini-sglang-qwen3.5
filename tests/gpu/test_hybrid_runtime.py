@@ -137,3 +137,35 @@ def test_bf16_single_token_conv_matches_full_convolution():
     actual = GDNAttnBackend()._apply_conv(x, 0, w, rt)
     torch.testing.assert_close(actual, expected.squeeze(-1), rtol=0, atol=0)
     torch.testing.assert_close(rt.conv_cache, torch.cat([initial[:, :, 1:], x.unsqueeze(-1)], -1))
+
+
+@pytest.mark.parametrize("channels", [135, 8192])
+def test_ragged_packed_convolution_matches_torch_and_preserves_inactive_slots(channels):
+    from minisgl.attention.gdn import GDNAttnBackend, _LayerRuntime
+    from minisgl.kernel.triton.conv_extend import packed_conv_extend
+
+    torch.manual_seed(918)
+    lengths, slots = [8, 1, 2, 16], [4, 0, 3, 1]
+    x = torch.randn(sum(lengths), channels, device="cuda", dtype=torch.bfloat16)
+    w = torch.randn(channels, 1, 4, device="cuda", dtype=torch.bfloat16)
+    initial = torch.randn(5, channels, 3, device="cuda", dtype=torch.bfloat16)
+    expected_rt = _LayerRuntime(initial.clone(), torch.empty(0))
+    expected, offset = [], 0
+    cu = [0]
+    for slot, length in zip(slots, lengths):
+        expected.append(
+            GDNAttnBackend()._apply_conv(x[offset : offset + length], slot, w, expected_rt)
+        )
+        offset += length
+        cu.append(offset)
+    actual_state = initial.clone()
+    actual = packed_conv_extend(
+        x,
+        w,
+        actual_state,
+        torch.tensor(slots, device="cuda", dtype=torch.int32),
+        torch.tensor(cu, device="cuda", dtype=torch.int32),
+    )
+    torch.testing.assert_close(actual, torch.cat(expected), rtol=0, atol=0)
+    torch.testing.assert_close(actual_state, expected_rt.conv_cache, rtol=0, atol=0)
+    torch.testing.assert_close(actual_state[2], initial[2], rtol=0, atol=0)

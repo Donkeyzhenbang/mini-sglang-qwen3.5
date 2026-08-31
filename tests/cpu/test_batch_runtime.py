@@ -23,6 +23,22 @@ class WaveExecutor:
         self.batch_sizes.append(len(items))
         return [target.verify(tokens) for target, tokens in items]
 
+    def prefill(self, targets, prompts):
+        return [t.prefill(p) for t, p in zip(targets, prompts)]
+
+    def propose(self, items):
+        return [t.propose(d, anchor, size) for t, d, anchor, size in items]
+
+    def checkpoint(self, targets):
+        return [t.checkpoint() for t in targets]
+
+    def restore(self, items):
+        for target, snapshot in items:
+            target.restore(snapshot)
+
+    def feasible_blocks(self, targets, candidates):
+        return targets[0].feasible_blocks(1, candidates, batch_size=len(targets))
+
 
 @pytest.mark.parametrize("adaptive", [False, True])
 @pytest.mark.parametrize("sequential", [False, True])
@@ -59,6 +75,24 @@ def test_wave_ragged_rejection_eos_and_slot_reuse(adaptive, sequential):
 def test_graph_sizes_respect_small_maximum():
     for maximum, expected in [(0, []), (1, [1]), (2, [1, 2]), (3, [1, 2]), (4, [1, 2, 4])]:
         assert _determine_cuda_graph_bs(None, maximum, 24 << 30) == expected
+
+
+def test_continuous_refill_preserves_order_and_does_not_wait_for_long_requests():
+    prompts = [[1, 2], [5, 6], [2, 9], [4], [8, 3], [7]]
+    limits = [25, 2, 1, 8, 19, 2]
+    targets = [WaveTarget("partial"), WaveTarget("perfect")]
+    expected = [
+        generate(ToyTarget(), None, p, n, block_size=1).token_ids for p, n in zip(prompts, limits)
+    ]
+    results, timing = generate_batch(
+        targets, [Draft(), Draft()], prompts, limits, WaveExecutor(), block_size=8
+    )
+    assert [r.token_ids for r in results] == expected
+    admitted = timing["admissions"]
+    assert [a["request"] for a in admitted] == list(range(6))
+    assert admitted[2]["slot"] == 1
+    assert admitted[2]["admitted_ms"] < timing["completed_ms"][0]
+    assert len(timing["request_cache_events"]) == 6
 
 
 def test_repeated_chat_hash_and_raw_workload_compatibility():

@@ -1,4 +1,4 @@
-"""Greedy DFlash wave loop with batched target verification and isolated slots."""
+"""Greedy DFlash with ragged batching and optional continuous slot refill."""
 
 from __future__ import annotations
 
@@ -20,33 +20,60 @@ def generate_batch(
     sequential=False,
 ):
     count = len(prompts)
-    if not count or not (len(targets) == len(drafts) == len(limits) == count):
+    if not count or not targets or len(targets) != len(drafts) or len(limits) != count:
         raise ValueError("Mismatched wave inputs")
     if any(n < 1 for n in limits):
         raise ValueError("Batched generation requires max_new_tokens >= 1")
-    for draft in drafts:
-        if draft is not None:
-            draft.reset()
     begin = time.perf_counter()
-    output, first_ms, rounds = [], [], [[] for _ in prompts]
-    for target, prompt in zip(targets, prompts):
-        output.append([target.prefill(prompt)])
-        target.synchronize()
-        first_ms.append((time.perf_counter() - begin) * 1000)
+    output = [[] for _ in prompts]
+    first_ms, completed_ms = [0.0] * count, [0.0] * count
+    rounds = [[] for _ in prompts]
+    cache_events = [{} for _ in prompts]
+    live, admissions = {}, []
+    next_request = 0
+
+    def admit():
+        nonlocal next_request
+        free = [slot for slot in range(len(targets)) if slot not in live.values()]
+        indices = list(range(next_request, min(count, next_request + len(free))))
+        if not indices:
+            return
+        slots = free[: len(indices)]
+        admitted_ms = (time.perf_counter() - begin) * 1000
+        for i, slot in zip(indices, slots):
+            live[i] = slot
+            if drafts[slot] is not None:
+                drafts[slot].reset()
+        tokens = executor.prefill([targets[s] for s in slots], [prompts[i] for i in indices])
+        targets[0].synchronize()
+        ready_ms = (time.perf_counter() - begin) * 1000
+        for i, slot, token in zip(indices, slots, tokens):
+            output[i] = [token]
+            first_ms[i] = completed_ms[i] = ready_ms
+            cache_events[i] = dict(getattr(targets[slot], "last_cache_event", {}))
+            admissions.append(
+                dict(request=i, slot=slot, admitted_ms=admitted_ms, first_token_ms=ready_ms)
+            )
+        next_request += len(indices)
+
+    admit()
     decode_begin = time.perf_counter()
-    completed_ms = list(first_ms)
     candidates = [b for b in (1, 2, 4, 8, 16) if b <= block_size]
     while True:
-        active = [
-            i for i in range(count) if len(output[i]) < limits[i] and output[i][-1] != eos_token_id
-        ]
+        for i in list(live):
+            if len(output[i]) >= limits[i] or output[i][-1] == eos_token_id:
+                del live[i]
+        admit()
+        active = [i for i in live if len(output[i]) < limits[i] and output[i][-1] != eos_token_id]
         if not active:
-            break
-        blocks, snapshots, observations = {}, {}, {}
+            if next_request == count:
+                break
+            continue
+        blocks, snapshots, observations, proposals = {}, {}, {}, []
+        allowed = executor.feasible_blocks([targets[live[i]] for i in active], candidates)
         for i in active:
-            target = targets[i]
+            target = targets[live[i]]
             context, remaining = target.length, limits[i] - len(output[i])
-            allowed = target.feasible_blocks(context, candidates, batch_size=len(active))
             if adaptive:
                 size = adaptive.choose(
                     batch_size=len(active),
@@ -59,23 +86,39 @@ def generate_batch(
                 if not feasible:
                     raise MemoryError("No decode block fits the joint wave budget")
                 size = max(feasible)
-            start = time.perf_counter()
-            blocks[i] = (
-                target.propose(drafts[i], output[i][-1], size) if size > 1 else [output[i][-1]]
-            )
-            target.synchronize()
-            draft_ms = (time.perf_counter() - start) * 1000
-            start = time.perf_counter()
-            snapshots[i] = target.checkpoint() if size > 1 else None
-            target.synchronize()
+            blocks[i] = [output[i][-1]]
+            if size > 1:
+                proposals.append(i)
             observations[i] = dict(
                 context=context,
                 block=size,
-                draft_ms=draft_ms,
-                restore_ms=(time.perf_counter() - start) * 1000,
+                draft_ms=0.0,
+                restore_ms=0.0,
             )
+        if proposals:
+            start = time.perf_counter()
+            proposed = executor.propose(
+                [
+                    (targets[live[i]], drafts[live[i]], output[i][-1], observations[i]["block"])
+                    for i in proposals
+                ]
+            )
+            targets[0].synchronize()
+            draft_ms = (time.perf_counter() - start) * 1000
+            start = time.perf_counter()
+            saved = executor.checkpoint([targets[live[i]] for i in proposals])
+            targets[0].synchronize()
+            checkpoint_ms = (time.perf_counter() - start) * 1000
+            for i, block, snapshot in zip(proposals, proposed, saved):
+                blocks[i], snapshots[i] = block, snapshot
+                observations[i].update(
+                    draft_ms=draft_ms / len(proposals), restore_ms=checkpoint_ms / len(proposals)
+                )
+            del saved, snapshot
         start = time.perf_counter()
-        verified = executor.verify([(targets[i], blocks[i]) for i in active], sequential=sequential)
+        verified = executor.verify(
+            [(targets[live[i]], blocks[i]) for i in active], sequential=sequential
+        )
         targets[0].synchronize()
         verify_ms = (time.perf_counter() - start) * 1000
         replays, emitted, accepted, features = [], {}, {}, {}
@@ -88,11 +131,10 @@ def generate_batch(
             if len(emitted[i]) != len(blocks[i]):
                 replays.append(i)
         start = time.perf_counter()
-        for i in replays:
-            targets[i].restore(snapshots[i])
         if replays:
+            executor.restore([(targets[live[i]], snapshots[i]) for i in replays])
             recovered = executor.verify(
-                [(targets[i], blocks[i][: len(emitted[i])]) for i in replays],
+                [(targets[live[i]], blocks[i][: len(emitted[i])]) for i in replays],
                 sequential=sequential,
             )
             for i, (_, hidden) in zip(replays, recovered):
@@ -101,7 +143,7 @@ def generate_batch(
         replay_ms = (time.perf_counter() - start) * 1000
         for i in active:
             progress = len(emitted[i])
-            targets[i].commit_features(features[i], progress)
+            targets[live[i]].commit_features(features[i], progress)
             output[i].extend(emitted[i])
             row = observations[i]
             # Shared target costs are amortized; actual throughput uses wave
@@ -135,5 +177,10 @@ def generate_batch(
         decode_ms=(end - decode_begin) * 1000,
         output_tokens=sum(map(len, output)),
         decoded_tokens=sum(len(x) - 1 for x in output),
-        round_cost_accounting="shared target verify/replay time amortized across participating requests",
+        request_cache_events=cache_events,
+        admissions=admissions,
+        completed_ms=completed_ms,
+        arrival_time_basis="all requests available at runtime start; TTFT includes queue wait",
+        decode_time_basis="wall time after initial prefill, including any refill prefills",
+        round_cost_accounting="shared prefill/draft/checkpoint/verify/replay costs amortized across participating requests",
     )

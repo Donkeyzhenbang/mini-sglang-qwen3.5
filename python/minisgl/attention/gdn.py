@@ -57,6 +57,7 @@ class GDNAttnBackend:
         )
         self.prefix_state_budget_bytes = 256 << 20
         self.extend_backend = "recurrent"
+        self.packed_verify_conv = False
         self._pending_resets: set[int] = set()
         self._pending_restores: Dict[int, PrefixStateSnapshot] = {}
 
@@ -426,14 +427,36 @@ class GDNAttnBackend:
             raise ValueError("A_log/dt_bias are required in RadixLinearAttention.")
 
         rt = self._ensure_runtime(layer, mixed_qkv)
-        conv_qkv = self._apply_conv_batch(mixed_qkv, reqs, conv_weight, rt)
         if self.extend_backend == "packed":
             from minisgl.kernel.triton.gdn_extend import packed_extend
 
-            lengths = [req.extend_len for req in reqs]
-            cu = [0]
-            for length in lengths:
-                cu.append(cu[-1] + length)
+            if forward_batch.gdn_extend_metadata is None:
+                cu = [0]
+                for req in reqs:
+                    cu.append(cu[-1] + req.extend_len)
+                forward_batch.gdn_extend_metadata = (
+                    torch.tensor(
+                        [req.table_idx for req in reqs], dtype=torch.int32, device=mixed_qkv.device
+                    ),
+                    torch.tensor(cu, dtype=torch.int32, device=mixed_qkv.device),
+                )
+            slots, cu_tensor = forward_batch.gdn_extend_metadata
+            if (
+                self.packed_verify_conv
+                and forward_batch.forward_mode.is_verify()
+                and conv_weight.shape[-1] == 4
+            ):
+                from minisgl.kernel.triton.conv_extend import packed_conv_extend
+
+                conv_qkv = packed_conv_extend(
+                    mixed_qkv.contiguous(),
+                    conv_weight.contiguous(),
+                    rt.conv_cache,
+                    slots,
+                    cu_tensor,
+                )
+            else:
+                conv_qkv = self._apply_conv_batch(mixed_qkv, reqs, conv_weight, rt)
             result = packed_extend(
                 conv_qkv.contiguous(),
                 a.contiguous(),
@@ -441,16 +464,15 @@ class GDNAttnBackend:
                 layer.A_log.contiguous(),
                 layer.dt_bias.contiguous(),
                 rt.ssm_cache,
-                torch.tensor(
-                    [req.table_idx for req in reqs], dtype=torch.int32, device=conv_qkv.device
-                ),
-                torch.tensor(cu, dtype=torch.int32, device=conv_qkv.device),
+                slots,
+                cu_tensor,
                 layer.num_q_heads,
                 layer.num_v_heads,
                 layer.head_k_dim,
                 layer.head_v_dim,
             )
             return result.unsqueeze(0)
+        conv_qkv = self._apply_conv_batch(mixed_qkv, reqs, conv_weight, rt)
         out = torch.empty(
             conv_qkv.shape[0],
             layer.num_v_heads,

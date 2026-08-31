@@ -42,6 +42,7 @@ class ForwardBatch:
     num_token_non_padded_cpu: int
     attn_backend: Any
     out_cache_loc_swa: "torch.Tensor | None" = None
+    gdn_extend_metadata: "tuple[torch.Tensor, torch.Tensor] | None" = None
 
     @classmethod
     def from_batch(cls, batch: "Batch", *, attn_backend: Any) -> "ForwardBatch":

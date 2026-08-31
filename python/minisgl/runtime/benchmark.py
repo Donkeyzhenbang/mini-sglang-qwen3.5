@@ -92,6 +92,11 @@ def main():
         help="Capture target one-token decode only; draft/multi-token verify stay eager",
     )
     p.add_argument(
+        "--continuous-batching",
+        action="store_true",
+        help="Refill completed request slots between rounds; offline experimental scheduler",
+    )
+    p.add_argument(
         "--repeat", type=int, default=1, help="Repeat the entire workload, retaining cache"
     )
     p.add_argument(
@@ -128,7 +133,7 @@ def main():
         )
     torch.manual_seed(args.seed)
     batch_size = args.batch_size or 1
-    use_batched = args.batch_size is not None or args.cuda_graph
+    use_batched = args.batch_size is not None or args.cuda_graph or args.continuous_batching
     tokenizer = load_tokenizer(args.model)
     workload_bytes = Path(args.workload).read_bytes()
     rows, workload_hash = prepare_workload(
@@ -213,6 +218,7 @@ def main():
             from minisgl.speculative.batch_loop import generate_batch
 
             executor = BatchedTargetExecutor(engine, taps, batch_size, cuda_graph=args.cuda_graph)
+            executor.batching = "continuous offline refill" if args.continuous_batching else "wave"
         targets = [
             MiniSGLTarget(
                 engine,
@@ -257,7 +263,7 @@ def main():
             )
 
         def wave(group):
-            n = len(group)
+            n = min(len(group), batch_size)
             return generate_batch(
                 targets[:n],
                 drafts[:n],
@@ -288,8 +294,9 @@ def main():
             executor.reset_stats()
         torch.cuda.reset_peak_memory_stats(engine.device)
         results, waves = [], []
-        for start in range(0, len(rows), batch_size):
-            group = rows[start : start + batch_size]
+        group_size = len(rows) if args.continuous_batching else batch_size
+        for start in range(0, len(rows), group_size):
+            group = rows[start : start + group_size]
             if executor:
                 generated, timing = wave(group)
                 waves.append(timing)
@@ -300,7 +307,9 @@ def main():
                     asdict(generated_row),
                     row,
                     tokenizer,
-                    targets[offset].last_cache_event,
+                    timing["request_cache_events"][offset]
+                    if executor
+                    else targets[offset].last_cache_event,
                 )
                 results.append(result)
                 if args.show_text:

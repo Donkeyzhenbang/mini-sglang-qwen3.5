@@ -1,0 +1,4 @@
+{"prompt":"请详细解释大模型推理中的 KV cache：包括 prefill 与 decode 的区别、显存占用随上下文长度的变化，以及 prefix cache 的作用。用四个小节回答。","max_new_tokens":256}
+{"prompt":"写一个完整的 Python LRUCache 类，使用 OrderedDict 实现 get 和 put，容量固定；再给出 unittest 测试，覆盖更新已有键、淘汰旧键和读取不存在的键。","max_new_tokens":256}
+{"prompt":"请向刚接触大模型推理的工程师解释投机解码。依次说明 draft、verify、接受率、回滚、batch size 与实际加速之间的关系，并给出一个具体例子。","max_new_tokens":256}
+{"prompt":"写一个 Python 函数合并重叠区间。要求包含类型注解、输入参数检查、算法解释、时间复杂度，以及空输入、嵌套区间、相邻区间的测试示例。","max_new_tokens":256}

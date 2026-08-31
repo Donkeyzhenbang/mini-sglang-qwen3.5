@@ -31,8 +31,9 @@ class RMSNorm(nn.Module):
 def rotary(x, positions, theta):
     dim = x.shape[-1]
     inv = 1.0 / (theta ** (torch.arange(0, dim, 2, device=x.device, dtype=torch.float32) / dim))
-    angles = positions.float()[:, None] * inv[None, :]
-    angles = torch.cat([angles, angles], -1)[None, None]
+    angles = positions.float()[..., None] * inv
+    angles = torch.cat([angles, angles], -1)
+    angles = angles[None, None] if positions.ndim == 1 else angles[:, None]
     half = dim // 2
     rotated = torch.cat([-x[..., half:], x[..., :half]], -1)
     return x * angles.cos().to(x.dtype) + rotated * angles.sin().to(x.dtype)

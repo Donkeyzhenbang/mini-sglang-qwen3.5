@@ -150,7 +150,10 @@ class MiniSGLTarget:
         self.history = list(entry.tokens)
 
     @torch.inference_mode()
-    def prefill(self, prompt):
+    def prepare_prefill(self, prompt):
+        """Restore any complete prefix; leave suffix computation to the executor."""
+        if not prompt or len(prompt) > self.engine.max_seq_len:
+            raise ValueError("Invalid prompt length")
         self.history = []
         self.pending_features = []
         with torch.cuda.stream(self.engine.stream):
@@ -164,8 +167,7 @@ class MiniSGLTarget:
                 tier=entry.tier if entry else None,
                 stored=False,
             )
-            start = time.perf_counter()
-            all_features = None
+            all_features = logits = None
             if entry is not None:
                 restore_start = time.perf_counter()
                 self._restore_prefix(entry)
@@ -175,16 +177,20 @@ class MiniSGLTarget:
                 logits = entry.tensors["last_logits"].to(self.device)
                 self.synchronize()
                 self.cache.record_restore(entry, (time.perf_counter() - restore_start) * 1000)
-            if self.length < len(prompt):
-                logits, new_features = self._forward(prompt[self.length :], prefill=True)
+            return dict(entry=entry, features=all_features, logits=logits)
+
+    @torch.inference_mode()
+    def finish_prefill(self, prompt, state, result, cost_ms):
+        entry, all_features, logits = state["entry"], state["features"], state["logits"]
+        with torch.cuda.stream(self.engine.stream):
+            if result is not None:
+                logits, new_features = result
                 if new_features is not None:
                     all_features = (
                         new_features
                         if all_features is None
                         else torch.cat([all_features, new_features])
                     )
-            self.synchronize()
-            cost_ms = (time.perf_counter() - start) * 1000
             if all_features is not None:
                 self.pending_features.append(all_features)
             if self.cache and (entry is None or len(entry.tokens) != len(prompt)):
@@ -193,7 +199,21 @@ class MiniSGLTarget:
                 self.last_cache_event["stored"] = self.cache.put(
                     prompt, self._prefix_payload(logits, all_features), recompute_ms
                 )
-            return int(logits[-1].argmax().item())
+            return logits[-1].argmax()
+
+    @torch.inference_mode()
+    def prefill(self, prompt):
+        state = self.prepare_prefill(prompt)
+        start = time.perf_counter()
+        result = (
+            self._forward(prompt[self.length :], prefill=True)
+            if self.length < len(prompt)
+            else None
+        )
+        self.synchronize()
+        token = self.finish_prefill(prompt, state, result, (time.perf_counter() - start) * 1000)
+        with torch.cuda.stream(self.engine.stream):
+            return int(token.item())
 
     @torch.inference_mode()
     def checkpoint(self):
@@ -259,7 +279,7 @@ class MiniSGLTarget:
                 blocks,
                 live_bytes=max(0, self.budget_bytes - available),
                 bytes_per_block_token=per_token * batch_size,
-                checkpoint_bytes=state_bytes * batch_size,
+                checkpoint_bytes=state_bytes * batch_size * (2 if self.executor else 1),
             )
 
         result = admission()
