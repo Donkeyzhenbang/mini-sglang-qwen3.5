@@ -1,16 +1,20 @@
 {
   "models": [
     {
-      "weights_downloaded": false,
+      "weights_downloaded": true,
       "revision": "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",
       "path": "/root/autodl-tmp/models/hybrid-runtime/Qwen3.5-4B",
-      "repo": "Qwen/Qwen3.5-4B"
+      "repo": "Qwen/Qwen3.5-4B",
+      "download_source": "modelscope",
+      "hash_verified_against": "huggingface_pinned_revision"
     },
     {
-      "weights_downloaded": false,
+      "weights_downloaded": true,
       "revision": "1905b5a05f974e82798be3ea0fd6baf2e4805a1c",
       "path": "/root/autodl-tmp/models/hybrid-runtime/Qwen3.5-4B-DFlash",
-      "repo": "z-lab/Qwen3.5-4B-DFlash"
+      "repo": "z-lab/Qwen3.5-4B-DFlash",
+      "download_source": "modelscope",
+      "hash_verified_against": "huggingface_pinned_revision"
     }
   ]
 }

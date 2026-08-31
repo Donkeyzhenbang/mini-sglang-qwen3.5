@@ -29,6 +29,20 @@ def main():
             "Use an isolated Transformers environment with Qwen3.5 support; do not replace the runtime environment."
         )
     model = cls.from_pretrained(args.model, dtype=torch.bfloat16, device_map={"": "cuda"}).eval()
+    from transformers.models.qwen3_5 import modeling_qwen3_5
+
+    operators = {
+        name: (
+            f"{op.__module__}.{op.__name__}"
+            if (op := getattr(modeling_qwen3_5, name, None))
+            else None
+        )
+        for name in (
+            "chunk_gated_delta_rule",
+            "fused_recurrent_gated_delta_rule",
+            "causal_conv1d_fn",
+        )
+    }
     tokenizer = transformers.AutoTokenizer.from_pretrained(args.model)
     data = Path(args.workload).read_bytes()
     results = []
@@ -61,6 +75,7 @@ def main():
         measured=True,
         mode="hf_reference",
         transformers=transformers.__version__,
+        gdn_operators=operators,
         torch=torch.__version__,
         gpu=torch.cuda.get_device_name(),
         workload_sha256=hashlib.sha256(data).hexdigest(),

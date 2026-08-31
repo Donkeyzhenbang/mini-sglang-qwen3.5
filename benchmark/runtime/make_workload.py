@@ -19,7 +19,9 @@ for length in map(int, args.lengths.split(",")):
         raise ValueError("Context lengths must be at least two")
     shared = [rng.randrange(100, 10000) for _ in range(length // 2)]
     for i in range(args.requests_per_length):
-        prefix = shared if i % 3 else [rng.randrange(100, 10000) for _ in shared]
+        # Row 0 must seed the shared prefix, otherwise a short four-row run
+        # never hits: its only stored short prefix would be unrelated.
+        prefix = [rng.randrange(100, 10000) for _ in shared] if i % 3 == 2 else shared
         # Store some exact shared-prefix requests so longest-prefix reuse is exercised.
         ids = (
             prefix

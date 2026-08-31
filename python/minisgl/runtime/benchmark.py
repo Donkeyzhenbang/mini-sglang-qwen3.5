@@ -212,8 +212,12 @@ def main():
         results = [asdict(run(row)) for row in rows]
         try:
             revision = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+            dirty = bool(
+                subprocess.check_output(["git", "status", "--porcelain"], text=True).strip()
+            )
         except (OSError, subprocess.CalledProcessError):
             revision = None
+            dirty = None
         output = dict(
             schema_version=1,
             measured=True,
@@ -224,6 +228,7 @@ def main():
                 (Path(args.model) / "config.json").read_bytes()
             ).hexdigest(),
             revision=revision,
+            git_dirty=dirty,
             python=platform.python_version(),
             torch=torch.__version__,
             gpu=torch.cuda.get_device_name(engine.device),
