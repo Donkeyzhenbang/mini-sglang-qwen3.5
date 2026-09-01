@@ -71,16 +71,22 @@ def generate_batch(
             continue
         blocks, snapshots, observations, proposals = {}, {}, {}, []
         allowed = executor.feasible_blocks([targets[live[i]] for i in active], candidates)
+        adaptive_block = None
+        adaptive_context = max(targets[live[i]].length for i in active)
+        if adaptive:
+            # One action per GPU wave keeps verification shapes uniform and
+            # lets the controller observe the actual shared wave cost.
+            adaptive_block = adaptive.choose(
+                batch_size=len(active),
+                context_len=adaptive_context,
+                feasible_blocks=allowed,
+                remaining=min(limits[i] - len(output[i]) for i in active),
+            )
         for i in active:
             target = targets[live[i]]
             context, remaining = target.length, limits[i] - len(output[i])
             if adaptive:
-                size = adaptive.choose(
-                    batch_size=len(active),
-                    context_len=context,
-                    feasible_blocks=allowed,
-                    remaining=remaining,
-                )
+                size = adaptive_block
             else:
                 feasible = [b for b in allowed if b <= remaining]
                 if not feasible:
@@ -95,6 +101,7 @@ def generate_batch(
                 draft_ms=0.0,
                 restore_ms=0.0,
             )
+        draft_ms = checkpoint_ms = 0.0
         if proposals:
             start = time.perf_counter()
             proposed = executor.propose(
@@ -131,14 +138,27 @@ def generate_batch(
             if len(emitted[i]) != len(blocks[i]):
                 replays.append(i)
         start = time.perf_counter()
+        use_state_journal = not sequential and hasattr(executor, "commit_verify_states")
         if replays:
             executor.restore([(targets[live[i]], snapshots[i]) for i in replays])
-            recovered = executor.verify(
-                [(targets[live[i]], blocks[i][: len(emitted[i])]) for i in replays],
-                sequential=sequential,
-            )
-            for i, (_, hidden) in zip(replays, recovered):
-                features[i] = hidden
+            if not use_state_journal:
+                if hasattr(executor, "cancel_verify_states"):
+                    executor.cancel_verify_states()
+                recovered = executor.verify(
+                    [(targets[live[i]], blocks[i][: len(emitted[i])]) for i in replays],
+                    sequential=sequential,
+                )
+                for i, (_, hidden) in zip(replays, recovered):
+                    features[i] = hidden
+            else:
+                executor.commit_verify_states(
+                    [(targets[live[i]], len(emitted[i])) for i in replays]
+                )
+                for i in replays:
+                    targets[live[i]].history.extend(blocks[i][: len(emitted[i])])
+        else:
+            if hasattr(executor, "cancel_verify_states"):
+                executor.cancel_verify_states()
         targets[0].synchronize()
         replay_ms = (time.perf_counter() - start) * 1000
         for i in active:
@@ -155,16 +175,16 @@ def generate_batch(
                 row["restore_ms"] += replay_ms / len(replays)
             rounds[i].append(row)
             completed_ms[i] = (time.perf_counter() - begin) * 1000
-            if adaptive:
-                adaptive.observe(
-                    row["block"],
-                    batch_size=len(active),
-                    context_len=row["context"],
-                    progress=progress,
-                    draft_ms=row["draft_ms"],
-                    verify_ms=row["verify_ms"],
-                    restore_ms=row["restore_ms"],
-                )
+        if adaptive:
+            adaptive.observe(
+                adaptive_block,
+                batch_size=len(active),
+                context_len=adaptive_context,
+                progress=sum(len(emitted[i]) for i in active),
+                draft_ms=draft_ms,
+                verify_ms=verify_ms,
+                restore_ms=checkpoint_ms + replay_ms,
+            )
         del snapshots, verified, features
     targets[0].synchronize()
     end = time.perf_counter()
@@ -182,5 +202,5 @@ def generate_batch(
         completed_ms=completed_ms,
         arrival_time_basis="all requests available at runtime start; TTFT includes queue wait",
         decode_time_basis="wall time after initial prefill, including any refill prefills",
-        round_cost_accounting="shared prefill/draft/checkpoint/verify/replay costs amortized across participating requests",
+        round_cost_accounting="shared prefill/draft/checkpoint/verify/state-commit-or-replay costs amortized across participating requests",
     )

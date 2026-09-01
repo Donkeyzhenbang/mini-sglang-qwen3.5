@@ -45,6 +45,22 @@ class PrefixStateSnapshot:
         )
 
 
+@dataclass
+class _VerifyLayerJournal:
+    mixed_qkv: torch.Tensor
+    a: torch.Tensor
+    b: torch.Tensor
+    request_slots: List[int]
+    request_lengths: List[int]
+    conv_weight: torch.Tensor
+    A_log: torch.Tensor
+    dt_bias: torch.Tensor
+    num_q_heads: int
+    num_v_heads: int
+    head_k_dim: int
+    head_v_dim: int
+
+
 class GDNAttnBackend:
     """Backend executor for GDN linear attention path."""
 
@@ -58,8 +74,82 @@ class GDNAttnBackend:
         self.prefix_state_budget_bytes = 256 << 20
         self.extend_backend = "recurrent"
         self.packed_verify_conv = False
+        self.verify_state_journal = False
+        self._verify_journal: Dict[int, _VerifyLayerJournal] | None = None
         self._pending_resets: set[int] = set()
         self._pending_restores: Dict[int, PrefixStateSnapshot] = {}
+
+    def begin_verify_journal(self) -> None:
+        if not self.verify_state_journal:
+            self._verify_journal = None
+            return
+        if self.extend_backend != "packed" or not self.packed_verify_conv:
+            raise ValueError("Verify state journal requires packed GDN and convolution")
+        self._verify_journal = {}
+
+    def cancel_verify_journal(self) -> None:
+        self._verify_journal = None
+
+    def commit_verify_journal(self, items) -> None:
+        """Restore accepted GDN states without rerunning target model layers."""
+        journal, self._verify_journal = self._verify_journal, None
+        if not items:
+            return
+        if not journal:
+            raise RuntimeError("No packed GDN verify journal was captured")
+        from minisgl.kernel.triton.conv_extend import packed_conv_extend
+        from minisgl.kernel.triton.gdn_extend import packed_extend
+
+        requested = [(target.slot, count) for target, count in items]
+        if any(count < 1 for _, count in requested):
+            raise ValueError("Accepted verify prefixes must be non-empty")
+        for layer_id, record in journal.items():
+            row_for_slot = {slot: row for row, slot in enumerate(record.request_slots)}
+            offsets = [0]
+            for length in record.request_lengths:
+                offsets.append(offsets[-1] + length)
+            pieces_qkv, pieces_a, pieces_b, cu = [], [], [], [0]
+            for slot, count in requested:
+                if slot not in row_for_slot:
+                    raise RuntimeError(f"Slot {slot} is absent from the verify journal")
+                row = row_for_slot[slot]
+                start, end = offsets[row], offsets[row + 1]
+                if count > end - start:
+                    raise ValueError("Accepted prefix exceeds the verified block")
+                stop = start + count
+                pieces_qkv.append(record.mixed_qkv[start:stop])
+                pieces_a.append(record.a[start:stop])
+                pieces_b.append(record.b[start:stop])
+                cu.append(cu[-1] + count)
+            raw = torch.cat(pieces_qkv).contiguous()
+            a = torch.cat(pieces_a).contiguous()
+            b = torch.cat(pieces_b).contiguous()
+            slots = torch.tensor(
+                [slot for slot, _ in requested], dtype=torch.int32, device=raw.device
+            )
+            cu_tensor = torch.tensor(cu, dtype=torch.int32, device=raw.device)
+            runtime = self._runtime[layer_id]
+            conv_qkv = packed_conv_extend(
+                raw,
+                record.conv_weight,
+                runtime.conv_cache,
+                slots,
+                cu_tensor,
+            )
+            packed_extend(
+                conv_qkv.contiguous(),
+                a,
+                b,
+                record.A_log,
+                record.dt_bias,
+                runtime.ssm_cache,
+                slots,
+                cu_tensor,
+                record.num_q_heads,
+                record.num_v_heads,
+                record.head_k_dim,
+                record.head_v_dim,
+            )
 
     def _get_prefix_node(self, handle: BaseCacheHandle) -> object | None:
         return getattr(handle, "node", None)
@@ -444,6 +534,23 @@ class GDNAttnBackend:
                     torch.tensor(cu, dtype=torch.int32, device=mixed_qkv.device),
                 )
             slots, cu_tensor = forward_batch.gdn_extend_metadata
+            if self._verify_journal is not None and forward_batch.forward_mode.is_verify():
+                if layer.layer_id in self._verify_journal:
+                    raise RuntimeError("A packed verify layer was journaled more than once")
+                self._verify_journal[layer.layer_id] = _VerifyLayerJournal(
+                    mixed_qkv=mixed_qkv.contiguous(),
+                    a=a.contiguous(),
+                    b=b.contiguous(),
+                    request_slots=[req.table_idx for req in reqs],
+                    request_lengths=[req.extend_len for req in reqs],
+                    conv_weight=conv_weight.contiguous(),
+                    A_log=layer.A_log.contiguous(),
+                    dt_bias=layer.dt_bias.contiguous(),
+                    num_q_heads=layer.num_q_heads,
+                    num_v_heads=layer.num_v_heads,
+                    head_k_dim=layer.head_k_dim,
+                    head_v_dim=layer.head_v_dim,
+                )
             if (
                 self.packed_verify_conv
                 and forward_batch.forward_mode.is_verify()

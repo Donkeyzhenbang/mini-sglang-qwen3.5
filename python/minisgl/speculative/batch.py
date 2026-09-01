@@ -62,6 +62,7 @@ class BatchedTargetExecutor:
         self.graph_enabled = cuda_graph
         self.batching = "wave"
         engine.attn_backend.gdn_backend.packed_verify_conv = True
+        engine.attn_backend.gdn_backend.verify_state_journal = True
         self.reset_stats()
         if cuda_graph:
             # The service graph cannot export draft features. Capture a decode
@@ -90,6 +91,8 @@ class BatchedTargetExecutor:
         self.eager_verify_calls = 0
         self.prefill_calls = 0
         self.draft_calls = 0
+        self.state_journal_commits = 0
+        self.state_journal_requests = 0
         self.prefill_batch_sizes = Counter()
         self.draft_batch_sizes = Counter()
         self.decode_batch_sizes = Counter()
@@ -106,12 +109,15 @@ class BatchedTargetExecutor:
             graph_scope="target one-token decode/sequential verify",
             packed_gdn_verify_convolution=self.engine.attn_backend.gdn_backend.extend_backend
             == "packed",
+            gdn_verify_state_journal=self.engine.attn_backend.gdn_backend.verify_state_journal,
             captured_batch_sizes=self.engine.graph_runner.graph_bs_list,
             graph_replays=self.graph_replays,
             eager_decode_calls=self.eager_decode_calls,
             eager_verify_calls=self.eager_verify_calls,
             prefill_calls=self.prefill_calls,
             draft_calls=self.draft_calls,
+            state_journal_commits=self.state_journal_commits,
+            state_journal_requests=self.state_journal_requests,
             prefill_batch_sizes=dict(self.prefill_batch_sizes),
             draft_batch_sizes=dict(self.draft_batch_sizes),
             decode_batch_sizes=dict(self.decode_batch_sizes),
@@ -294,7 +300,13 @@ class BatchedTargetExecutor:
     def verify(self, items, *, sequential):
         if not sequential:
             with torch.cuda.stream(self.engine.stream):
-                result = self.forward(items)
+                gdn = self.engine.attn_backend.gdn_backend
+                gdn.begin_verify_journal()
+                try:
+                    result = self.forward(items)
+                except BaseException:
+                    gdn.cancel_verify_journal()
+                    raise
                 predictions = torch.cat([logits.argmax(-1) for logits, _ in result]).tolist()
                 outputs, offset = [], 0
                 for logits, features in result:
@@ -323,3 +335,13 @@ class BatchedTargetExecutor:
                 )
                 offset += n
             return result
+
+    @torch.inference_mode()
+    def commit_verify_states(self, items):
+        with torch.cuda.stream(self.engine.stream):
+            self.engine.attn_backend.gdn_backend.commit_verify_journal(items)
+        self.state_journal_commits += 1
+        self.state_journal_requests += len(items)
+
+    def cancel_verify_states(self):
+        self.engine.attn_backend.gdn_backend.cancel_verify_journal()

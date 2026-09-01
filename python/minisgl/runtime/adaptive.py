@@ -14,7 +14,7 @@ class Observation:
 
 
 class AdaptiveBlockController:
-    def __init__(self, blocks=(1, 2, 4, 8, 16), *, alpha=0.25, exploration_interval=8):
+    def __init__(self, blocks=(1, 2, 4, 8, 16), *, alpha=0.25, exploration_interval=32):
         self.blocks = tuple(sorted(set(blocks)))
         if not self.blocks or self.blocks[0] != 1 or any(b < 1 for b in self.blocks):
             raise ValueError("Candidate blocks must include one-token fallback")
@@ -42,7 +42,7 @@ class AdaptiveBlockController:
         restore_ms: float = 0,
     ):
         values = (draft_ms, verify_ms, restore_ms)
-        if block not in self.blocks or not 1 <= progress <= block:
+        if block not in self.blocks or not 1 <= progress <= block * batch_size:
             raise ValueError("Invalid block progress")
         if any(v < 0 or not math.isfinite(v) for v in values):
             raise ValueError("Latency must be finite and nonnegative")
