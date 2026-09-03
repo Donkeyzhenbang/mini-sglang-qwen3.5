@@ -62,7 +62,23 @@ def test_native_checkpoint_loading(tmp_path):
 
     m = DFlashDraft(config()).eval()
     (tmp_path / "config.json").write_text(json.dumps(config()))
-    save_file(m.state_dict(), tmp_path / "model.safetensors")
+    # Published DFlash checkpoints use separate projection names. The runtime
+    # model packs them once at load time to reduce GEMM launches.
+    checkpoint = dict(m.state_dict())
+    for layer_id in range(config()["num_hidden_layers"]):
+        attn = f"layers.{layer_id}.self_attn."
+        qkv = checkpoint.pop(attn + "qkv_proj.weight")
+        q_size = m.layers[layer_id].self_attn.q_size
+        kv_size = m.layers[layer_id].self_attn.kv_size
+        q, k, v = qkv.split([q_size, kv_size, kv_size], dim=0)
+        checkpoint[attn + "q_proj.weight"] = q
+        checkpoint[attn + "k_proj.weight"] = k
+        checkpoint[attn + "v_proj.weight"] = v
+        mlp = f"layers.{layer_id}.mlp."
+        gate, up = checkpoint.pop(mlp + "gate_up_proj.weight").chunk(2, dim=0)
+        checkpoint[mlp + "gate_proj.weight"] = gate
+        checkpoint[mlp + "up_proj.weight"] = up
+    save_file(checkpoint, tmp_path / "model.safetensors")
     restored = DFlashDraft.from_directory(tmp_path, "cpu", torch.float32)
     for name, value in m.state_dict().items():
         torch.testing.assert_close(restored.state_dict()[name], value)
@@ -76,6 +92,9 @@ def test_request_context_forks_share_weights_but_not_kv():
     assert (
         first.fc.weight.data_ptr() == second.fc.weight.data_ptr() == original.fc.weight.data_ptr()
     )
+    original.build_context_kv_fusion()
+    first = original.fork_context()
+    assert first.context_kv_weight.data_ptr() == original.context_kv_weight.data_ptr()
     a, b, noise = torch.randn(1, 5, 16), torch.randn(1, 3, 16), torch.randn(1, 4, 8)
     first(a, noise, 5)
     before = first.layers[1].self_attn.cached_k.clone()
@@ -143,3 +162,32 @@ def test_batched_draft_rejects_duplicate_contexts_and_unshared_weights():
     other = DFlashDraft(config()).eval()
     with pytest.raises(ValueError, match="share model weights"):
         propose_batch([row, (other, *row[1:])], weights, weights)
+
+
+@torch.inference_mode()
+def test_fused_context_kv_matches_per_layer_projection():
+    torch.manual_seed(97)
+    fused = DFlashDraft(config()).eval()
+    fused.build_context_kv_fusion()
+    reference = fused.fork_context()
+    reference.context_kv_weight = reference.context_kv_bias = None
+    for added, block in [(5, 4), (2, 2), (4, 3)]:
+        features = torch.randn(1, added, 16)
+        noise = torch.randn(1, block, 8)
+        target_length = fused.context_length + added
+        actual = fused(features, noise, target_length)
+        expected = reference(features, noise, target_length)
+        torch.testing.assert_close(actual, expected, rtol=2e-5, atol=2e-5)
+        for actual_layer, expected_layer in zip(fused.layers, reference.layers):
+            torch.testing.assert_close(
+                actual_layer.self_attn.cached_k,
+                expected_layer.self_attn.cached_k,
+                rtol=2e-5,
+                atol=2e-5,
+            )
+            torch.testing.assert_close(
+                actual_layer.self_attn.cached_v,
+                expected_layer.self_attn.cached_v,
+                rtol=2e-5,
+                atol=2e-5,
+            )

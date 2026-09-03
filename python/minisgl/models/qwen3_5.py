@@ -298,7 +298,7 @@ class Qwen3_5Model(BaseOP):
         for layer_id, layer in enumerate(self.layers.op_list):
             x, residual = layer.forward(x, residual)
             if layer_id in capture_layer_ids:
-                features[layer_id] = (x + residual).clone()
+                features[layer_id] = x + residual
         self._last_aux_hidden = (
             torch.cat([features[i] for i in capture_layer_ids], dim=-1)
             if capture_layer_ids

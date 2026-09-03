@@ -76,13 +76,19 @@ def main():
         "--target-numerics",
         choices=["stable", "fast"],
         default="stable",
-        help="Stable uses fixed target reductions and FP32 logits; fast uses legacy BF16 library kernels",
+        help=(
+            "Stable uses fixed target reductions and FP32 logits; "
+            "fast uses legacy BF16 library kernels"
+        ),
     )
     p.add_argument(
         "--verify-mode",
         choices=["parallel", "sequential"],
         default="parallel",
-        help="Sequential uses one-token forwards for diagnostics; fast numerics can vary with batch shape",
+        help=(
+            "Sequential uses one-token forwards for diagnostics; "
+            "fast numerics can vary with batch shape"
+        ),
     )
     p.add_argument("--warmup", type=int, default=1)
     p.add_argument("--seed", type=int, default=42)
@@ -96,6 +102,12 @@ def main():
         "--cuda-graph",
         action="store_true",
         help="Capture target one-token decode only; draft/multi-token verify stay eager",
+    )
+    p.add_argument(
+        "--draft-context-kv-fusion",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Project all DFlash context K/V layers with one packed GEMM",
     )
     p.add_argument(
         "--continuous-batching",
@@ -162,6 +174,17 @@ def main():
     )
     taps = tuple(draft_config["dflash_config"]["target_layer_ids"]) if draft_config else ()
     external = checkpoint_bytes(args.draft) if draft_config else 0
+    draft_fusion_buffer_bytes = 0
+    if draft_config and args.draft_context_kv_fusion:
+        draft_fusion_buffer_bytes = (
+            draft_config["num_hidden_layers"]
+            * 2
+            * draft_config["num_key_value_heads"]
+            * draft_config["head_dim"]
+            * draft_config["hidden_size"]
+            * 2
+        )
+        external += draft_fusion_buffer_bytes
     config = EngineConfig(
         model_path=args.model,
         tp_info=DistributedInfo(0, 1),
@@ -210,7 +233,12 @@ def main():
     engine = Engine(config)
     try:
         draft = (
-            DFlashDraft.from_directory(args.draft, engine.device, torch.bfloat16)
+            DFlashDraft.from_directory(
+                args.draft,
+                engine.device,
+                torch.bfloat16,
+                fuse_context_kv=args.draft_context_kv_fusion,
+            )
             if draft_config
             else None
         )
@@ -358,6 +386,7 @@ def main():
             peak_reserved_bytes=torch.cuda.max_memory_reserved(engine.device),
             cache=cache.stats,
             cache_enabled=cache_enabled,
+            draft_fusion_buffer_bytes=draft_fusion_buffer_bytes,
             execution=executor.stats()
             if executor
             else dict(

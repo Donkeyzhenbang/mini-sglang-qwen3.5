@@ -38,6 +38,7 @@ def propose_batch(items, embedding, head):
     new_counts = [row[1].shape[1] for row in items]
     context = pad_sequence([row[1][0] for row in items], batch_first=True)
     context = model.hidden_norm(model.fc(context))
+    context_kv = model.project_context_kv(context)
     new_width = context.shape[1]
     ids = torch.full((count, width), model.mask_token_id, dtype=torch.long, device=device)
     ids[:, 0] = torch.tensor([row[2] for row in items], device=device)
@@ -61,10 +62,29 @@ def propose_batch(items, embedding, head):
         def split(t, heads):
             return t.view(count, -1, heads, attn.head_dim).transpose(1, 2)
 
-        q = attn.q_norm(split(attn.q_proj(normalized), attn.heads))
-        new = torch.cat([context, normalized], dim=1)
-        k = attn.k_norm(split(attn.k_proj(new), attn.kv_heads))
-        v = split(attn.v_proj(new), attn.kv_heads)
+        query_qkv = attn.qkv_proj(normalized)
+        q, query_k, query_v = query_qkv.split(
+            [attn.q_size, attn.kv_size, attn.kv_size], dim=-1
+        )
+        layer_context_kv = (
+            context_kv[..., layer_id, :] if context_kv is not None else None
+        )
+        if layer_context_kv is None:
+            layer_context_kv = F.linear(
+                context,
+                attn.qkv_proj.weight[attn.q_size :],
+                attn.qkv_proj.bias[attn.q_size :]
+                if attn.qkv_proj.bias is not None
+                else None,
+            )
+        context_k, context_v = layer_context_kv.split(
+            [attn.kv_size, attn.kv_size], dim=-1
+        )
+        q = attn.q_norm(split(q, attn.heads))
+        k = attn.k_norm(
+            split(torch.cat([context_k, query_k], dim=1), attn.kv_heads)
+        )
+        v = split(torch.cat([context_v, query_v], dim=1), attn.kv_heads)
         q = rotary(q, q_positions, attn.theta)
         k = rotary(k, new_positions, attn.theta)
         old_counts = [s.cached_k.shape[-2] if s.cached_k is not None else 0 for s in states]

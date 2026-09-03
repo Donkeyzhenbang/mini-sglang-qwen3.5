@@ -58,9 +58,11 @@ class DraftAttention(nn.Module):
         self.heads, self.kv_heads = c["num_attention_heads"], c["num_key_value_heads"]
         hidden, dim = c["hidden_size"], self.head_dim
         bias = c.get("attention_bias", False)
-        self.q_proj = nn.Linear(hidden, self.heads * dim, bias=bias)
-        self.k_proj = nn.Linear(hidden, self.kv_heads * dim, bias=bias)
-        self.v_proj = nn.Linear(hidden, self.kv_heads * dim, bias=bias)
+        self.q_size = self.heads * dim
+        self.kv_size = self.kv_heads * dim
+        # Match production runtimes: one packed QKV parameter avoids three
+        # tiny parameter reads and lets the query projection run as one GEMM.
+        self.qkv_proj = nn.Linear(hidden, self.q_size + 2 * self.kv_size, bias=bias)
         self.o_proj = nn.Linear(self.heads * dim, hidden, bias=bias)
         self.q_norm = RMSNorm(dim, c["rms_norm_eps"])
         self.k_norm = RMSNorm(dim, c["rms_norm_eps"])
@@ -76,16 +78,32 @@ class DraftAttention(nn.Module):
     def reset(self):
         self.cached_k = self.cached_v = None
 
-    def forward(self, x, context, previous_context, target_length):
+    def forward(
+        self, x, context, previous_context, target_length, *, context_kv=None
+    ):
         batch, count, _ = x.shape
 
         def split(t, heads):
             return t.view(batch, -1, heads, self.head_dim).transpose(1, 2)
 
-        q = self.q_norm(split(self.q_proj(x), self.heads))
-        new = torch.cat([context, x], dim=1)
-        k = self.k_norm(split(self.k_proj(new), self.kv_heads))
-        v = split(self.v_proj(new), self.kv_heads)
+        query_qkv = self.qkv_proj(x)
+        q, query_k, query_v = query_qkv.split(
+            [self.q_size, self.kv_size, self.kv_size], dim=-1
+        )
+        # Context only needs K/V. Slicing the packed parameter keeps the exact
+        # FLOP count of separate projections while reducing query GEMM launches.
+        if context_kv is None:
+            context_kv = F.linear(
+                context,
+                self.qkv_proj.weight[self.q_size :],
+                self.qkv_proj.bias[self.q_size :]
+                if self.qkv_proj.bias is not None
+                else None,
+            )
+        context_k, context_v = context_kv.split([self.kv_size, self.kv_size], dim=-1)
+        q = self.q_norm(split(q, self.heads))
+        k = self.k_norm(split(torch.cat([context_k, query_k], dim=1), self.kv_heads))
+        v = split(torch.cat([context_v, query_v], dim=1), self.kv_heads)
         positions = torch.arange(previous_context, target_length + count, device=x.device)
         q = rotary(q, positions[-count:], self.theta)
         k = rotary(k, positions, self.theta)
@@ -113,12 +131,13 @@ class DraftMLP(nn.Module):
     def __init__(self, c):
         super().__init__()
         h, i = c["hidden_size"], c["intermediate_size"]
-        self.gate_proj = nn.Linear(h, i, bias=False)
-        self.up_proj = nn.Linear(h, i, bias=False)
+        self.intermediate_size = i
+        self.gate_up_proj = nn.Linear(h, 2 * i, bias=False)
         self.down_proj = nn.Linear(i, h, bias=False)
 
     def forward(self, x):
-        return self.down_proj(F.silu(self.gate_proj(x)) * self.up_proj(x))
+        gate, up = self.gate_up_proj(x).split(self.intermediate_size, dim=-1)
+        return self.down_proj(F.silu(gate) * up)
 
 
 class DraftLayer(nn.Module):
@@ -129,8 +148,14 @@ class DraftLayer(nn.Module):
         self.input_layernorm = RMSNorm(c["hidden_size"], c["rms_norm_eps"])
         self.post_attention_layernorm = RMSNorm(c["hidden_size"], c["rms_norm_eps"])
 
-    def forward(self, x, context, previous, length):
-        x = x + self.self_attn(self.input_layernorm(x), context, previous, length)
+    def forward(self, x, context, previous, length, *, context_kv=None):
+        x = x + self.self_attn(
+            self.input_layernorm(x),
+            context,
+            previous,
+            length,
+            context_kv=context_kv,
+        )
         return x + self.mlp(self.post_attention_layernorm(x))
 
 
@@ -159,9 +184,31 @@ class DFlashDraft(nn.Module):
         self.hidden_norm = RMSNorm(hidden, eps)
         self.norm = RMSNorm(hidden, eps)
         self.context_length = 0
+        self.context_kv_weight = None
+        self.context_kv_bias = None
+
+    def build_context_kv_fusion(self):
+        """Pack every layer's context K/V projection into one shared GEMM."""
+        weights, biases = [], []
+        for layer in self.layers:
+            attn = layer.self_attn
+            weights.append(attn.qkv_proj.weight[attn.q_size :])
+            if attn.qkv_proj.bias is not None:
+                biases.append(attn.qkv_proj.bias[attn.q_size :])
+        self.context_kv_weight = torch.cat(weights, dim=0).contiguous()
+        self.context_kv_bias = (
+            torch.cat(biases, dim=0).contiguous() if biases else None
+        )
+
+    def project_context_kv(self, context):
+        if self.context_kv_weight is None:
+            return None
+        width = 2 * self.layers[0].self_attn.kv_size
+        projected = F.linear(context, self.context_kv_weight, self.context_kv_bias)
+        return projected.view(*projected.shape[:-1], len(self.layers), width)
 
     @classmethod
-    def from_directory(cls, folder, device, dtype):
+    def from_directory(cls, folder, device, dtype, *, fuse_context_kv=True):
         from safetensors import safe_open
 
         folder = Path(folder)
@@ -175,7 +222,32 @@ class DFlashDraft(nn.Module):
                     if key in weights:
                         raise ValueError(f"Duplicate checkpoint key: {key}")
                     weights[key] = f.get_tensor(key).to(dtype=dtype)
+        # Published checkpoints store Q/K/V and gate/up separately. Pack them
+        # once at load time, like vLLM/SGLang, without retaining duplicate weights.
+        for layer_id in range(config["num_hidden_layers"]):
+            attn = f"layers.{layer_id}.self_attn."
+            q_key = attn + "q_proj.weight"
+            if q_key in weights:
+                weights[attn + "qkv_proj.weight"] = torch.cat(
+                    [weights.pop(attn + name) for name in (
+                        "q_proj.weight", "k_proj.weight", "v_proj.weight"
+                    )], dim=0
+                )
+                if config.get("attention_bias", False):
+                    weights[attn + "qkv_proj.bias"] = torch.cat(
+                        [weights.pop(attn + name) for name in (
+                            "q_proj.bias", "k_proj.bias", "v_proj.bias"
+                        )], dim=0
+                    )
+            mlp = f"layers.{layer_id}.mlp."
+            gate_key = mlp + "gate_proj.weight"
+            if gate_key in weights:
+                weights[mlp + "gate_up_proj.weight"] = torch.cat(
+                    [weights.pop(gate_key), weights.pop(mlp + "up_proj.weight")], dim=0
+                )
         model.load_state_dict(weights, strict=True, assign=True)
+        if fuse_context_kv:
+            model.build_context_kv_fusion()
         return model.eval()
 
     def reset(self):
@@ -188,15 +260,28 @@ class DFlashDraft(nn.Module):
         with torch.device("meta"):
             model = type(self)(self.config)
         model.load_state_dict(self.state_dict(), strict=True, assign=True)
+        # The packed buffer is immutable and shared just like model weights.
+        model.context_kv_weight = self.context_kv_weight
+        model.context_kv_bias = self.context_kv_bias
         return model.eval()
 
     def forward(self, context_features, noise_embeddings, target_length):
         if self.context_length + context_features.shape[1] != target_length:
             raise ValueError("Draft context must contain exactly the newly confirmed target states")
         context = self.hidden_norm(self.fc(context_features))
+        context_kv = self.project_context_kv(context)
         x = noise_embeddings
-        for layer in self.layers:
-            x = layer(x, context, self.context_length, target_length)
+        for layer_id, layer in enumerate(self.layers):
+            layer_context_kv = (
+                context_kv[..., layer_id, :] if context_kv is not None else None
+            )
+            x = layer(
+                x,
+                context,
+                self.context_length,
+                target_length,
+                context_kv=layer_context_kv,
+            )
         self.context_length = target_length
         return self.norm(x)
 
