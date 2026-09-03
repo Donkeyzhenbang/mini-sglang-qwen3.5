@@ -18,9 +18,12 @@ from torch.nn import functional as F
 
 
 class _DecodeModel:
-    def __init__(self, engine, taps, max_batch, target_numerics):
+    def __init__(
+        self, engine, taps, max_batch, target_numerics, capture_final_hidden
+    ):
         self.engine, self.taps = engine, taps
         self.target_numerics = target_numerics
+        self.capture_final_hidden = capture_final_hidden
         head = engine.model.lm_head
         self.head = (head.tied_embedding or head).weight
         self.features = (
@@ -30,7 +33,7 @@ class _DecodeModel:
                 device=engine.device,
                 dtype=engine.dtype,
             )
-            if taps
+            if taps or capture_final_hidden
             else None
         )
 
@@ -38,7 +41,12 @@ class _DecodeModel:
         batch = get_global_ctx().batch
         hidden = self.engine.model.model.forward(batch.input_ids, self.taps)
         if self.features is not None:
-            self.features[: batch.padded_size].copy_(self.engine.model.model._last_aux_hidden)
+            captured = (
+                hidden
+                if self.capture_final_hidden
+                else self.engine.model.model._last_aux_hidden
+            )
+            self.features[: batch.padded_size].copy_(captured)
         self.engine.model.model._last_aux_hidden = None
         return self.project(hidden)
 
@@ -51,14 +59,25 @@ class _DecodeModel:
 
 
 class BatchedTargetExecutor:
-    def __init__(self, engine, taps, max_batch, *, cuda_graph=False, target_numerics="fast"):
+    def __init__(
+        self,
+        engine,
+        taps,
+        max_batch,
+        *,
+        cuda_graph=False,
+        target_numerics="fast",
+        capture_final_hidden=False,
+    ):
         from .numerics import configure_target_numerics
 
         configure_target_numerics(engine, target_numerics)
         self.engine, self.taps = engine, taps
         self.max_batch = max_batch
         self.target_numerics = target_numerics
-        self.decode_model = _DecodeModel(engine, taps, max_batch, target_numerics)
+        self.decode_model = _DecodeModel(
+            engine, taps, max_batch, target_numerics, capture_final_hidden
+        )
         self.graph_enabled = cuda_graph
         self.batching = "wave"
         engine.attn_backend.gdn_backend.packed_verify_conv = True
@@ -181,8 +200,14 @@ class BatchedTargetExecutor:
                     )
                     self.graph_replays += 1
                 else:
-                    hidden = self.engine.model.model.forward(batch.input_ids, self.taps)
-                    features = self.engine.model.model._last_aux_hidden
+                    hidden = self.engine.model.model.forward(
+                        batch.input_ids, self.taps
+                    )
+                    features = (
+                        hidden
+                        if self.decode_model.capture_final_hidden
+                        else self.engine.model.model._last_aux_hidden
+                    )
                     self.engine.model.model._last_aux_hidden = None
                     # Project only the last prompt token of each request.
                     if prefill:
@@ -246,16 +271,42 @@ class BatchedTargetExecutor:
 
     @torch.inference_mode()
     def propose(self, items):
-        from .batch_draft import propose_batch
-
         with torch.cuda.stream(self.engine.stream):
-            rows = [
-                (d, torch.cat(t.pending_features).unsqueeze(0), anchor, size, t.length)
-                for t, d, anchor, size in items
-            ]
-            result = propose_batch(rows, items[0][0].embedding, items[0][0].head)
+            if getattr(items[0][1], "draft_type", "dflash") == "mtp":
+                from .mtp import propose_mtp_batch
+
+                rows = [
+                    (
+                        d,
+                        torch.cat(t.pending_features).unsqueeze(0),
+                        t.pending_next_tokens,
+                        size,
+                        t.length,
+                    )
+                    for t, d, _, size in items
+                ]
+                result = propose_mtp_batch(
+                    rows, items[0][0].embedding, items[0][0].head
+                )
+            else:
+                from .batch_draft import propose_batch
+
+                rows = [
+                    (
+                        d,
+                        torch.cat(t.pending_features).unsqueeze(0),
+                        anchor,
+                        size,
+                        t.length,
+                    )
+                    for t, d, anchor, size in items
+                ]
+                result = propose_batch(
+                    rows, items[0][0].embedding, items[0][0].head
+                )
             for t, _, _, _ in items:
                 t.pending_features.clear()
+                t.pending_next_tokens.clear()
         self.draft_calls += 1
         self.draft_batch_sizes[len(items)] += 1
         return result

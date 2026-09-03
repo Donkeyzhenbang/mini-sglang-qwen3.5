@@ -2,13 +2,15 @@
 
 日期：2026-09-03
 
+> 状态更新：随后已完成 MiniSGLang 最小原生 Qwen3.5 MTP-1/MTP-3 实现，包括嵌入式权重加载、target final hidden 捕获、右移 token 对齐、独立 MTP KV、batch 内三步递推和 benchmark 入口。当前仍需 GPU token parity 与性能复测，MTP draft CUDA Graph 尚未实现。
+
 ## 1. 结论
 
 本轮分别检查了三个问题：Qwen3.5 MTP 在成熟框架里是否能加速、MiniSGLang DFlash 为什么低于 target-only，以及哪些 vLLM/SGLang 优化值得移植。
 
 已有 RTX 4090 实测表明，**Qwen3.5 MTP 本身并不慢**。SGLang 0.5.9 在 batch=4、生成 512 token 时，target-only 为 312.00 tok/s，MTP-1 为 373.54 tok/s，MTP-3 为 445.56 tok/s，分别提升 1.20x 和 1.43x。MiniSGLang 当前 DFlash 慢，主要来自 draft 模型更重、draft/多 token verify 仍走 eager，以及细碎 GEMM 和 kernel launch 开销。
 
-本轮已完成无 GPU 条件下可以安全落地的结构优化：DFlash QKV 融合、gate/up 融合、六层 context-KV 跨层融合、target tap 冗余 clone 消除、数值诊断增强，以及完整 GPU 复测矩阵。CPU 测试 60/60 通过。GPU 性能收益尚未复测，因此本文不把结构变化写成已实现的加速数字。
+本轮已完成无 GPU 条件下可以安全落地的结构优化：DFlash QKV 融合、gate/up 融合、六层 context-KV 跨层融合、target tap 冗余 clone 消除、原生 MTP-1/MTP-3、数值诊断增强，以及完整 GPU 复测矩阵。CPU 测试 65/65 通过；真实 Qwen3.5-4B checkpoint 的 230.03 MiB MTP 权重也已在 CPU 上 strict load 成功。GPU 性能收益尚未复测，因此本文不把结构变化写成已实现的加速数字。
 
 ## 2. 已有实测基线
 
@@ -27,7 +29,7 @@
 
 这排除了“Qwen3.5 MTP 必然低于 target-only”。如果 MiniSGLang 原生 MTP 后续仍慢，应优先检查执行图、KV/GDN 状态、batch 调度和 kernel 数量。
 
-MiniSGLang 现在还没有原生 MTP executor；当前工具通过隔离的 SGLang 环境测试同一 checkpoint。仓库 loader 仍会跳过 `mtp.*` 权重，因此不能把外部 SGLang MTP benchmark 描述为 MiniSGLang 原生支持。
+MiniSGLang 已增加最小原生 MTP executor。原有 target loader 仍跳过 `mtp.*`，由独立 MTP loader 只读取嵌入式 MTP 参数，避免把约 230 MiB 权重并入 target 模型。SGLang 数据仍是性能参照；MiniSGLang 新路径尚未在 GPU 上复测。
 
 ### 2.2 MiniSGLang DFlash
 
@@ -111,16 +113,16 @@ vLLM 0.22 可直接参考 `vllm/compilation/passes/` 下的 `qk_norm_rope_fusion
 
 ## 7. MiniSGLang 原生 MTP 工作量
 
-完整原生支持需要：
+本轮已经完成最小原生 MTP-1/MTP-3 的下列工作：
 
 1. 加载目前被跳过的 `mtp.*` 权重，checkpoint 内约有一层、约 230 MiB MTP 参数；
 2. 实现 input embedding norm、target hidden norm、concat+FC、训练 full-attention layer和共享 target LM head；
 3. 为每个请求维护独立 MTP KV state 与 rollback length；
 4. 接入现有 greedy verifier，支持 1-step 和重复 3-step proposal；
-5. 为固定 step 与 verify shape 捕获 CUDA Graph；
-6. 在同一 deterministic/stable 策略下对齐 SGLang token IDs，再比较 acceptance、draft、verify、state 和总吞吐。
+5. benchmark 支持 `--mode mtp --mtp-steps 1|3`，并纳入 target/MTP/DFlash 统一矩阵；
+6. CPU 测试覆盖官方权重键重打包、batch/serial 一致性、增量 KV/全量重建一致性，以及投机态不会污染确认态。
 
-可读 eager 版本约 3–5 人日；具备 CUDA Graph、token parity、rollback 测试和可复现实验的版本约 7–10 人日。验收目标应参考已测 SGLang：长输出 batch=1 至少约 1.1x，batch=4 约 1.2–1.4x。达到前只能称为“功能适配”，不能称为“性能支持”。
+当前属于可读 eager 功能版本。剩余工作是为固定三步 draft 与 verify shape 捕获 CUDA Graph，并在同一 deterministic/stable 策略下对齐 SGLang token IDs，再比较 acceptance、draft、verify、state 和总吞吐。验收目标参考已测 SGLang：长输出 batch=1 至少约 1.1x，batch=4 约 1.2–1.4x。达到前可以称为“原生功能支持”，还不能称为“性能支持”。
 
 ## 8. GPU 恢复后的复现与验收
 

@@ -1,4 +1,4 @@
-"""Reproducible single-GPU target / fixed-DFlash / adaptive-DFlash experiments.
+"""Reproducible Qwen3.5 target, DFlash and native MTP experiments.
 
 python -m minisgl.runtime.benchmark --help
 Requires a real GPU; refuses to label CPU simulation as inference throughput.
@@ -17,7 +17,7 @@ from dataclasses import asdict, replace
 from pathlib import Path
 
 
-def checkpoint_bytes(folder, dtype_bytes=2):
+def checkpoint_bytes(folder, dtype_bytes=2, prefixes=None):
     """Inspect safetensors headers without loading tensors or executing model code."""
     total, keys = 0, set()
     for path in Path(folder).glob("*.safetensors"):
@@ -28,6 +28,8 @@ def checkpoint_bytes(folder, dtype_bytes=2):
             header = json.loads(f.read(length))
         for name, tensor in header.items():
             if name == "__metadata__":
+                continue
+            if prefixes and not name.startswith(tuple(prefixes)):
                 continue
             if name in keys:
                 raise ValueError(f"Duplicate weight: {name}")
@@ -59,8 +61,21 @@ def validate_model_pair(target_config, draft_config, block_size):
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--model", required=True, help="Local Qwen3.5 target directory")
-    p.add_argument("--draft", help="Local DFlash v1 directory; no remote code is executed")
-    p.add_argument("--mode", choices=["target", "fixed", "adaptive"], default="target")
+    p.add_argument(
+        "--draft", help="Local DFlash v1 directory; no remote code is executed"
+    )
+    p.add_argument(
+        "--mode",
+        choices=["target", "fixed", "adaptive", "mtp"],
+        default="target",
+    )
+    p.add_argument(
+        "--mtp-steps",
+        type=int,
+        choices=[1, 3],
+        default=3,
+        help="Native Qwen3.5 MTP recurrent proposal steps",
+    )
     p.add_argument(
         "--workload", required=True, help="JSONL with input_ids or prompt, max_new_tokens"
     )
@@ -124,8 +139,10 @@ def main():
     )
     p.add_argument("--show-text", action="store_true", help="Print prompt, answer and cache status")
     args = p.parse_args()
-    if args.mode != "target" and not args.draft:
-        p.error("--draft is required for speculative modes")
+    if args.mode in ("fixed", "adaptive") and not args.draft:
+        p.error("--draft is required for DFlash modes")
+    if args.mode == "mtp" and args.draft:
+        p.error("--draft is not used by embedded Qwen3.5 MTP")
     if (
         min(args.max_context, args.block_size, args.gpu_budget_gib) <= 0
         or min(args.gpu_cache_mib, args.host_cache_mib, args.warmup) < 0
@@ -142,6 +159,7 @@ def main():
     from minisgl.runtime.workload import describe_result, prepare_workload, print_result
     from minisgl.speculative.draft import DFlashDraft
     from minisgl.speculative.loop import generate
+    from minisgl.speculative.mtp import Qwen3_5MTPDraft
     from minisgl.speculative.target import MiniSGLTarget
     from minisgl.utils import load_tokenizer
 
@@ -169,11 +187,19 @@ def main():
         p.error("Workload exceeds --max-context")
     draft_config = (
         json.loads((Path(args.draft) / "config.json").read_text())
-        if args.mode != "target"
+        if args.mode in ("fixed", "adaptive")
         else None
     )
-    taps = tuple(draft_config["dflash_config"]["target_layer_ids"]) if draft_config else ()
+    taps = (
+        tuple(draft_config["dflash_config"]["target_layer_ids"])
+        if draft_config
+        else ()
+    )
+    capture_final_hidden = args.mode == "mtp"
     external = checkpoint_bytes(args.draft) if draft_config else 0
+    if capture_final_hidden:
+        external += checkpoint_bytes(args.model, prefixes=("mtp.",))
+    spec_block_size = args.mtp_steps + 1 if capture_final_hidden else args.block_size
     draft_fusion_buffer_bytes = 0
     if draft_config and args.draft_context_kv_fusion:
         draft_fusion_buffer_bytes = (
@@ -204,13 +230,25 @@ def main():
     if config.model_config.model_type not in ("qwen3_5_text", "qwen3_5"):
         raise ValueError("Experimental runner supports dense Qwen3.5 text targets only")
     if getattr(config.hf_config, "quantization_config", None):
-        raise ValueError("INT4/AWQ/GPTQ target loading is not implemented; use a BF16 target")
+        raise ValueError(
+            "INT4/AWQ/GPTQ target loading is not implemented; use a BF16 target"
+        )
     c = config.model_config
+    if capture_final_hidden:
+        hf_text = getattr(config.hf_config, "text_config", config.hf_config)
+        if getattr(hf_text, "mtp_num_hidden_layers", 0) != 1:
+            raise ValueError("Target checkpoint does not contain one-layer Qwen3.5 MTP")
     # Conservative activation/feature reservation, not a measured peak or hard
     # allocator cap. Larger contexts must pass admission before model execution.
     activation = (
         args.max_context
-        * (4 * c.hidden_size + 3 * c.intermediate_size + 3 * len(taps) * c.hidden_size)
+        * (
+            4 * c.hidden_size
+            + 3 * c.intermediate_size
+            + 3
+            * (len(taps) + int(capture_final_hidden))
+            * c.hidden_size
+        )
         * 2
     )
     draft_context = 0
@@ -220,6 +258,14 @@ def main():
             * draft_config["num_hidden_layers"]
             * draft_config["num_key_value_heads"]
             * draft_config["head_dim"]
+            * 4
+        )
+    elif capture_final_hidden:
+        # Persistent MTP K/V plus a temporary recursive proposal chain.
+        draft_context = (
+            args.max_context
+            * c.num_kv_heads
+            * c.head_dim
             * 4
         )
     config = replace(
@@ -232,16 +278,22 @@ def main():
         validate_model_pair(config.model_config, draft_config, args.block_size)
     engine = Engine(config)
     try:
-        draft = (
-            DFlashDraft.from_directory(
+        if draft_config:
+            draft = DFlashDraft.from_directory(
                 args.draft,
                 engine.device,
                 torch.bfloat16,
                 fuse_context_kv=args.draft_context_kv_fusion,
             )
-            if draft_config
-            else None
-        )
+        elif capture_final_hidden:
+            draft = Qwen3_5MTPDraft.from_directory(
+                args.model,
+                engine.device,
+                torch.bfloat16,
+                max_steps=args.mtp_steps,
+            )
+        else:
+            draft = None
         cache = HybridPrefixCache(
             args.gpu_cache_mib << 20, args.host_cache_mib << 20, policy=args.cache_policy
         )
@@ -262,12 +314,14 @@ def main():
                 batch_size,
                 cuda_graph=args.cuda_graph,
                 target_numerics=args.target_numerics,
+                capture_final_hidden=capture_final_hidden,
             )
             executor.batching = "continuous offline refill" if args.continuous_batching else "wave"
         targets = [
             MiniSGLTarget(
                 engine,
                 capture_layer_ids=taps,
+                capture_final_hidden=capture_final_hidden,
                 cache=cache if cache_enabled else None,
                 budget_bytes=int(args.gpu_budget_gib * 2**30),
                 verify_mode=args.verify_mode,
@@ -294,14 +348,22 @@ def main():
             blocks = (
                 (1,)
                 if args.mode == "target"
-                else tuple(b for b in (1, 2, 4, 8, 16) if b <= args.block_size)
+                else (
+                    tuple(range(1, spec_block_size + 1))
+                    if capture_final_hidden
+                    else tuple(
+                        b
+                        for b in (1, 2, 4, 8, 16)
+                        if b <= spec_block_size
+                    )
+                )
             )
             return generate(
                 target,
                 draft,
                 ids,
                 count,
-                block_size=1 if args.mode == "target" else args.block_size,
+                block_size=1 if args.mode == "target" else spec_block_size,
                 adaptive=controller,
                 eos_token_id=tokenizer.eos_token_id,
                 feasible=lambda context: target.feasible_blocks(context, blocks),
@@ -315,7 +377,7 @@ def main():
                 [r["input_ids"] for r in group],
                 [r["max_new_tokens"] for r in group],
                 executor,
-                block_size=1 if args.mode == "target" else args.block_size,
+                block_size=1 if args.mode == "target" else spec_block_size,
                 adaptive=controller,
                 eos_token_id=tokenizer.eos_token_id,
                 sequential=args.verify_mode == "sequential",
@@ -387,6 +449,10 @@ def main():
             cache=cache.stats,
             cache_enabled=cache_enabled,
             draft_fusion_buffer_bytes=draft_fusion_buffer_bytes,
+            native_mtp_steps=args.mtp_steps if capture_final_hidden else None,
+            speculative_block_size=(
+                spec_block_size if args.mode != "target" else 1
+            ),
             execution=executor.stats()
             if executor
             else dict(

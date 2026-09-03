@@ -15,6 +15,9 @@ def test_checkpoint_header_inspection_without_tensor_load(tmp_path):
         struct.pack("<Q", len(header)) + header + bytes(64)
     )
     assert checkpoint_bytes(tmp_path) == 64
+    assert checkpoint_bytes(tmp_path, prefixes=("layer.",)) == 64
+    with pytest.raises(ValueError, match="No safetensors"):
+        checkpoint_bytes(tmp_path, prefixes=("mtp.",))
 
 
 def test_comparison_rejects_mismatched_or_unmeasured_runs():

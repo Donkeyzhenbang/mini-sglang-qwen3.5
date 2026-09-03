@@ -58,7 +58,12 @@ def generate_batch(
 
     admit()
     decode_begin = time.perf_counter()
-    candidates = [b for b in (1, 2, 4, 8, 16) if b <= block_size]
+    mtp = bool(drafts and getattr(drafts[0], "draft_type", None) == "mtp")
+    candidates = (
+        list(range(1, block_size + 1))
+        if mtp
+        else [b for b in (1, 2, 4, 8, 16) if b <= block_size]
+    )
     while True:
         for i in list(live):
             if len(output[i]) >= limits[i] or output[i][-1] == eos_token_id:
@@ -164,6 +169,8 @@ def generate_batch(
         for i in active:
             progress = len(emitted[i])
             targets[live[i]].commit_features(features[i], progress)
+            if hasattr(targets[live[i]], "commit_next_tokens"):
+                targets[live[i]].commit_next_tokens(emitted[i])
             output[i].extend(emitted[i])
             row = observations[i]
             # Shared target costs are amortized; actual throughput uses wave
@@ -202,5 +209,8 @@ def generate_batch(
         completed_ms=completed_ms,
         arrival_time_basis="all requests available at runtime start; TTFT includes queue wait",
         decode_time_basis="wall time after initial prefill, including any refill prefills",
-        round_cost_accounting="shared prefill/draft/checkpoint/verify/state-commit-or-replay costs amortized across participating requests",
+        round_cost_accounting=(
+            "shared prefill/draft/checkpoint/verify/state-commit-or-replay "
+            "costs amortized across participating requests"
+        ),
     )

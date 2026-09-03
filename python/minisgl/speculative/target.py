@@ -31,6 +31,7 @@ class MiniSGLTarget:
         engine,
         *,
         capture_layer_ids=(),
+        capture_final_hidden=False,
         cache: HybridPrefixCache | None = None,
         budget_bytes=24 << 30,
         safety_bytes=256 << 20,
@@ -48,6 +49,9 @@ class MiniSGLTarget:
         self.last_cache_event = {}
         self.engine, self.device = engine, engine.device
         self.capture_layer_ids = tuple(capture_layer_ids)
+        self.capture_final_hidden = capture_final_hidden
+        if self.capture_layer_ids and self.capture_final_hidden:
+            raise ValueError("Draft cannot request target taps and final hidden together")
         if any(
             i < 0 or i >= len(engine.model.model.layers.op_list) - 1 for i in self.capture_layer_ids
         ):
@@ -56,6 +60,7 @@ class MiniSGLTarget:
         self.cache = cache
         self.history: list[int] = []
         self.pending_features = []
+        self.pending_next_tokens: list[int] = []
         self.budget_bytes, self.safety_bytes = budget_bytes, safety_bytes
         self.memory_events = []
         self.embedding = engine.model.model.embed_tokens.weight
@@ -106,8 +111,14 @@ class MiniSGLTarget:
                     attention_layers=self.engine.attention_layers,
                 ),
             ):
-                hidden = self.engine.model.model.forward(batch.input_ids, self.capture_layer_ids)
-                features = self.engine.model.model._last_aux_hidden
+                hidden = self.engine.model.model.forward(
+                    batch.input_ids, self.capture_layer_ids
+                )
+                features = (
+                    hidden
+                    if self.capture_final_hidden
+                    else self.engine.model.model._last_aux_hidden
+                )
                 self.engine.model.model._last_aux_hidden = None
                 logits = F.linear(hidden[-1:] if prefill else hidden, self.head).float()
         self.history = new_history
@@ -156,6 +167,7 @@ class MiniSGLTarget:
             raise ValueError("Invalid prompt length")
         self.history = []
         self.pending_features = []
+        self.pending_next_tokens = []
         with torch.cuda.stream(self.engine.stream):
             self.gdn.on_table_slot_allocated(self.slot)
             self.gdn.prepare_state_slots()
@@ -191,15 +203,19 @@ class MiniSGLTarget:
                         if all_features is None
                         else torch.cat([all_features, new_features])
                     )
+            token = logits[-1].argmax()
             if all_features is not None:
                 self.pending_features.append(all_features)
+            if self.capture_final_hidden:
+                self.pending_next_tokens.extend(prompt[1:])
+                self.pending_next_tokens.append(int(token))
             if self.cache and (entry is None or len(entry.tokens) != len(prompt)):
                 # Reused-prefix compute cost is an estimate; suffix is measured.
                 recompute_ms = cost_ms + (entry.recompute_ms if entry else 0)
                 self.last_cache_event["stored"] = self.cache.put(
                     prompt, self._prefix_payload(logits, all_features), recompute_ms
                 )
-            return logits[-1].argmax()
+            return token
 
     @torch.inference_mode()
     def prefill(self, prompt):
@@ -253,12 +269,34 @@ class MiniSGLTarget:
         if features is not None:
             self.pending_features.append(features[:count])
 
+    def commit_next_tokens(self, tokens):
+        if self.capture_final_hidden:
+            self.pending_next_tokens.extend(map(int, tokens))
+
     @torch.inference_mode()
     def propose(self, draft, anchor, block):
         with torch.cuda.stream(self.engine.stream):
             features = torch.cat(self.pending_features, dim=0).unsqueeze(0)
-            result = draft.propose(features, anchor, block, self.length, self.embedding, self.head)
+            if getattr(draft, "draft_type", "dflash") == "mtp":
+                result = draft.propose(
+                    features,
+                    self.pending_next_tokens,
+                    block,
+                    self.length,
+                    self.embedding,
+                    self.head,
+                )
+            else:
+                result = draft.propose(
+                    features,
+                    anchor,
+                    block,
+                    self.length,
+                    self.embedding,
+                    self.head,
+                )
         self.pending_features.clear()
+        self.pending_next_tokens.clear()
         return result
 
     def feasible_blocks(self, context, blocks, batch_size=1):

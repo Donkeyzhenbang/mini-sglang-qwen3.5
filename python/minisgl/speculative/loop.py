@@ -90,6 +90,8 @@ def generate(
             target.restore(snapshot)
             _, features = target.verify(block[:commit_count])
         target.commit_features(features, commit_count)
+        if hasattr(target, "commit_next_tokens"):
+            target.commit_next_tokens(newly_emitted)
         del snapshot
         target.synchronize()
         restore_ms = (time.perf_counter() - start) * 1000 + checkpoint_ms
