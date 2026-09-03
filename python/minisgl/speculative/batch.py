@@ -29,7 +29,7 @@ class _DecodeModel:
         self.features = (
             torch.empty(
                 max_batch,
-                len(taps) * self.head.shape[1],
+                (1 if capture_final_hidden else len(taps)) * self.head.shape[1],
                 device=engine.device,
                 dtype=engine.dtype,
             )

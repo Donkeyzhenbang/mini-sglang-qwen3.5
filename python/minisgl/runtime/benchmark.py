@@ -236,7 +236,12 @@ def main():
     c = config.model_config
     if capture_final_hidden:
         hf_text = getattr(config.hf_config, "text_config", config.hf_config)
-        if getattr(hf_text, "mtp_num_hidden_layers", 0) != 1:
+        mtp_layers = (
+            hf_text.get("mtp_num_hidden_layers", 0)
+            if isinstance(hf_text, dict)
+            else getattr(hf_text, "mtp_num_hidden_layers", 0)
+        )
+        if mtp_layers != 1:
             raise ValueError("Target checkpoint does not contain one-layer Qwen3.5 MTP")
     # Conservative activation/feature reservation, not a measured peak or hard
     # allocator cap. Larger contexts must pass admission before model execution.
@@ -291,6 +296,7 @@ def main():
                 engine.device,
                 torch.bfloat16,
                 max_steps=args.mtp_steps,
+                max_position=args.max_context,
             )
         else:
             draft = None

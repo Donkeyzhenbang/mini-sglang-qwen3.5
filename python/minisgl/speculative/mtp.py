@@ -22,6 +22,11 @@ class GemmaRMSNorm(nn.Module):
         self.eps = eps
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if x.is_cuda:
+            from flashinfer import gemma_rmsnorm
+
+            flat = x.reshape(-1, x.shape[-1])
+            return gemma_rmsnorm(flat, self.weight, self.eps).view_as(x)
         dtype = x.dtype
         y = x.float()
         y = y * torch.rsqrt(y.square().mean(-1, keepdim=True) + self.eps)
@@ -78,6 +83,7 @@ class MTPAttention(nn.Module):
         )
         self.rotary_dim = int(self.head_dim * factor)
         self.rotary_dim -= self.rotary_dim % 2
+        self.rope_cache: torch.Tensor | None = None
 
     def forward(
         self,
@@ -95,14 +101,31 @@ class MTPAttention(nn.Module):
         )
         qg = qg.view(batch, width, self.heads, 2 * self.head_dim)
         q, gate = qg.chunk(2, dim=-1)
-        q = self.q_norm(q).transpose(1, 2)
+        q = self.q_norm(q)
         gate = gate.reshape(batch, width, -1)
-        k = self.k_norm(
-            k.view(batch, width, self.kv_heads, self.head_dim)
-        ).transpose(1, 2)
+        k = self.k_norm(k.view(batch, width, self.kv_heads, self.head_dim))
         v = v.view(batch, width, self.kv_heads, self.head_dim).transpose(1, 2)
-        q = _apply_partial_rope(q, positions, self.rotary_dim, self.theta)
-        k = _apply_partial_rope(k, positions, self.rotary_dim, self.theta)
+        if q.is_cuda and self.rope_cache is not None:
+            from flashinfer import apply_rope_with_cos_sin_cache_inplace
+
+            flat_q = q.reshape(batch * width, -1).contiguous()
+            flat_k = k.reshape(batch * width, -1).contiguous()
+            apply_rope_with_cos_sin_cache_inplace(
+                positions=positions.reshape(-1),
+                query=flat_q,
+                key=flat_k,
+                head_size=self.head_dim,
+                cos_sin_cache=self.rope_cache,
+            )
+            q = flat_q.view(batch, width, self.heads, self.head_dim).transpose(1, 2)
+            k = flat_k.view(batch, width, self.kv_heads, self.head_dim).transpose(1, 2)
+        else:
+            q = _apply_partial_rope(
+                q.transpose(1, 2), positions, self.rotary_dim, self.theta
+            )
+            k = _apply_partial_rope(
+                k.transpose(1, 2), positions, self.rotary_dim, self.theta
+            )
 
         old_width = old_k.shape[-2]
         keys = torch.cat([old_k, k], dim=-2)
@@ -133,8 +156,16 @@ class MTPMLP(nn.Module):
         self.down_proj = nn.Linear(intermediate, hidden, bias=False)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        gate, up = self.gate_up_proj(x).split(self.intermediate_size, dim=-1)
-        return self.down_proj(F.silu(gate) * up)
+        gate_up = self.gate_up_proj(x)
+        if gate_up.is_cuda:
+            from flashinfer import silu_and_mul
+
+            flat = gate_up.reshape(-1, gate_up.shape[-1])
+            activated = silu_and_mul(flat).view(*gate_up.shape[:-1], -1)
+        else:
+            gate, up = gate_up.split(self.intermediate_size, dim=-1)
+            activated = F.silu(gate) * up
+        return self.down_proj(activated)
 
 
 class MTPLayer(nn.Module):
@@ -207,11 +238,18 @@ class Qwen3_5MTPDraft(nn.Module):
         with torch.device("meta"):
             model = type(self)(self.config, self.max_steps)
         model.load_state_dict(self.state_dict(), strict=True, assign=True)
+        model.layer.self_attn.rope_cache = self.layer.self_attn.rope_cache
         return model.eval()
 
     @classmethod
     def from_directory(
-        cls, folder, device, dtype, *, max_steps: int = 3
+        cls,
+        folder,
+        device,
+        dtype,
+        *,
+        max_steps: int = 3,
+        max_position: int | None = None,
     ) -> "Qwen3_5MTPDraft":
         from safetensors import safe_open
 
@@ -248,6 +286,24 @@ class Qwen3_5MTPDraft(nn.Module):
             dim=0,
         )
         model.load_state_dict(weights, strict=True, assign=True)
+        attn = model.layer.self_attn
+        if torch.device(device).type == "cuda":
+            positions = torch.arange(
+                max_position or config.get("max_position_embeddings", 4096),
+                device=device,
+                dtype=torch.float32,
+            )
+            inv = 1.0 / (
+                attn.theta
+                ** (
+                    torch.arange(
+                        0, attn.rotary_dim, 2, device=device, dtype=torch.float32
+                    )
+                    / attn.rotary_dim
+                )
+            )
+            angles = positions[:, None] * inv
+            attn.rope_cache = torch.cat([angles.cos(), angles.sin()], dim=-1)
         return model.eval()
 
     def _forward_batch(

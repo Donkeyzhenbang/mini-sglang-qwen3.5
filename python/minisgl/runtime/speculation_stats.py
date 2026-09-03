@@ -1,4 +1,4 @@
-"""DFlash counters, separate from prefix-cache hits and insensitive to EOS padding."""
+"""Speculation counters, separate from cache hits and insensitive to EOS padding."""
 
 from __future__ import annotations
 
@@ -56,9 +56,9 @@ def speculation_stats(rounds):
 def format_speculation(stats):
     rate = stats["acceptance_rate"]
     if rate is None:
-        return "DFlash: inactive (no draft tokens proposed)"
+        return "Speculation: inactive (no draft tokens proposed)"
     return (
-        f"DFlash: acceptance={rate:.2%} "
+        f"Speculation: acceptance={rate:.2%} "
         f"({stats['draft_tokens_emitted']}/{stats['draft_tokens_proposed']} draft tokens emitted); "
         f"progress={stats['mean_output_tokens_per_round']:.2f} tokens/round; "
         f"spec_rounds={stats['speculative_rounds']}; fallback_rounds={stats['fallback_rounds']}"

@@ -29,7 +29,7 @@
 
 这排除了“Qwen3.5 MTP 必然低于 target-only”。如果 MiniSGLang 原生 MTP 后续仍慢，应优先检查执行图、KV/GDN 状态、batch 调度和 kernel 数量。
 
-MiniSGLang 已增加最小原生 MTP executor。原有 target loader 仍跳过 `mtp.*`，由独立 MTP loader 只读取嵌入式 MTP 参数，避免把约 230 MiB 权重并入 target 模型。SGLang 数据仍是性能参照；MiniSGLang 新路径尚未在 GPU 上复测。
+MiniSGLang 已增加最小原生 MTP executor。原有 target loader 仍跳过 `mtp.*`，由独立 MTP loader 只读取嵌入式 MTP 参数，避免把约 230 MiB 权重并入 target 模型。SGLang 数据仍是性能参照；MiniSGLang 新路径已于 2026-09-03 在 RTX 4090 上完成首轮功能与性能复测，详见文末 GPU 复测补充。
 
 ### 2.2 MiniSGLang DFlash
 
@@ -142,4 +142,25 @@ bash benchmark/runtime/run_qwen35_spec_matrix.sh \
 - fast 模式若出现 token 差异，必须单独报告；
 - target/draft/verify graph replay counter 与预期相符。
 
-当前实例无 GPU。SGLang main 和 vLLM 0.22 的 DFlash 代码已经静态 review，但因需要更新且相互隔离的 Torch/kernel 环境，尚未执行其 DFlash 性能测试。GPU 恢复后应先运行 Mini 矩阵，再在独立环境跑 SGLang/vLLM，不能在实测前引用其性能数字。
+当前实例 GPU 已恢复，MiniSGLang target/MTP-1/MTP-3 首轮矩阵已完成。SGLang MTP 已有独立实测对照；SGLang main 和 vLLM 0.22 的 DFlash 代码已经静态 review，其 DFlash 性能仍需在隔离环境复测，避免污染当前 Torch/kernel 组合。
+
+
+## 9. 2026-09-03 GPU 复测补充
+
+环境为单张 RTX 4090、Qwen3.5-4B BF16、四条 256-token 长回答、batch=4、parallel verify、packed GDN。CUDA Graph 当前只覆盖 target 单 token decode。
+
+| 路径 | 数值模式 | 输出 tok/s | 相对 target | 接受率 |
+|---|---|---:|---:|---:|
+| target-only | stable | 332.85 | 1.00x | - |
+| MTP-1 优化前 | stable | 260.61 | 0.78x | 79.37% |
+| MTP-3 优化前 | stable | 272.17 | 0.82x | 58.24% |
+| MTP-3 融合版 | stable | 299.56 aggregate / 302.66 median | 0.90x / 0.91x | 58.98% |
+| target-only | fast | 327.49 | 1.00x | - |
+| MTP-3 优化前 | fast | 299.64 | 0.91x | 56.40% |
+| MTP-3 融合版 | fast | 313.37 | 0.96x | 56.40% |
+
+融合版使用 FlashInfer Gemma RMSNorm、SiLU×Mul 和预计算 RoPE。stable MTP-3 五轮为 285.25–305.62 tok/s，中位数 302.66 tok/s；20/20 个请求与 stable target 的 token IDs 完全一致。stable draft 阶段每 wave 均值从约 1.18 s 降到 0.94 s。
+
+GPU 复测修复了嵌套 text_config 的 MTP 识别、final-hidden CUDA Graph buffer 宽度为零、graph capture 失败后清理二次异常，并把误标为 DFlash 的输出改为通用 Speculation 标签。
+
+当前 MTP-3 是 MiniSGLang 的最佳 MTP 设置，但还未超过 target-only。剩余差距集中在 eager 三步 draft、eager 多 token verify 和 GDN snapshot/journal commit。SGLang 的 MTP-3 已达到 1.43x，说明接受率不是主要瓶颈；下一阶段应实现 MTP draft graph、piecewise verify graph 和 fused LM-head+argmax。
