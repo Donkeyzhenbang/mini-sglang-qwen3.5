@@ -73,7 +73,7 @@ request for another request's verification. The exploration interval increased
 from 8 to 32 rounds to reduce repeated probing after cold start.
 
 The result remains slower than target-only on this workload. The next limiting
-costs are the four-layer DFlash draft and multi-token target verification, while
+costs are the six-layer DFlash draft and multi-token target verification, while
 the low long-context block-8 acceptance makes those costs hard to amortize.
 
 ## Reproduction

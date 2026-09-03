@@ -27,6 +27,9 @@ def main():
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--eager", action="store_true")
     parser.add_argument("--overlap", action="store_true")
+    parser.add_argument("--attention-backend", default="flashinfer")
+    parser.add_argument("--deterministic", action="store_true")
+    parser.add_argument("--fp32-lm-head", action="store_true")
     args = parser.parse_args()
     output = Path(args.output)
     if output.exists():
@@ -64,7 +67,7 @@ def main():
         max_total_tokens=8192,
         max_running_requests=8,
         mem_fraction_static=0.75,
-        attention_backend="flashinfer",
+        attention_backend=args.attention_backend,
         disable_radix_cache=True,
         disable_overlap_schedule=not args.overlap,
         disable_cuda_graph=args.eager,
@@ -74,6 +77,8 @@ def main():
         skip_tokenizer_init=True,
         enable_multimodal=False,
         log_level="info",
+        enable_deterministic_inference=args.deterministic,
+        enable_fp32_lm_head=args.fp32_lm_head,
     )
     if args.mode == "mtp":
         kwargs.update(

@@ -16,11 +16,13 @@ def summarize(target, candidates):
                 raise ValueError(f"Incomparable {key}: {label}")
         if run["versions"] != target["versions"] or run["gpu"] != target["gpu"]:
             raise ValueError(f"Incomparable environment: {label}")
+        run_cases = {(c["batch"], c["length"]): c for c in run["cases"]}
         for case in run["cases"]:
             batch, length = case["batch"], case["length"]
             ref = baseline[batch, length]
             reference = ref["samples"][0]["requests"]
             accepted = drafted = verifies = total = equal = 0
+            repeat_equal = repeat_total = 0
             mismatches = []
             rates = []
             for sample in case["samples"]:
@@ -29,6 +31,12 @@ def summarize(target, candidates):
                     raise ValueError("Incomplete batch")
                 for index, (request, expected) in enumerate(zip(requests, reference)):
                     actual, want = request["output_ids"], expected["output_ids"]
+                    if sample["repeat"]:
+                        repeat_total += 1
+                        repeat_equal += (
+                            actual
+                            == case["samples"][0]["requests"][index]["output_ids"]
+                        )
                     if request["input_ids"] != expected["input_ids"]:
                         raise ValueError("Prompt token mismatch")
                     if len(actual) != length or len(want) != length:
@@ -56,6 +64,16 @@ def summarize(target, candidates):
                 verifies += sample["verify_rounds"]
                 rates.append(batch * length / sample["wall_seconds"])
             median = statistics.median(rates)
+            shape_reference = run_cases.get((1, length))
+            shape_match = shape_first_difference = None
+            if batch != 1 and shape_reference is not None:
+                one = shape_reference["samples"][0]["requests"][0]["output_ids"]
+                many = case["samples"][0]["requests"][0]["output_ids"]
+                shape_match = one == many
+                if not shape_match:
+                    shape_first_difference = next(
+                        i for i, pair in enumerate(zip(one, many)) if pair[0] != pair[1]
+                    )
             rows.append(
                 dict(
                     mode=label,
@@ -74,6 +92,10 @@ def summarize(target, candidates):
                     else None,
                     exact_token_matches=equal,
                     compared_outputs=total,
+                    repeat_stable_matches=repeat_equal,
+                    repeat_stable_compared_outputs=repeat_total,
+                    batch1_first_request_match=shape_match,
+                    batch1_first_difference=shape_first_difference,
                     mismatches=mismatches,
                 )
             )
