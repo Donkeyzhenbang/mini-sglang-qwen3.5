@@ -4,7 +4,8 @@
 
 ## 可直接使用的版本
 
-**面向 Qwen3.5 混合架构的推理运行时优化**｜个人系统项目｜2026.08–2026.09  
+**面向 Qwen3.5 混合架构的推理运行时优化**｜个人系统项目｜2026.08–2026.09
+
 技术栈：Python / PyTorch / Triton / CUDA Graph / FlashInfer / MiniSGLang
 
 - 基于 MiniSGLang Qwen3.5 实现原生 MTP-1/MTP-3 与 DFlash v1，打通 target hidden 提取、批量候选生成、多 token 验证及 KV/conv/SSM 状态提交，支持离线 batch=4 并发与请求槽复用。
