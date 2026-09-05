@@ -23,6 +23,7 @@ from torch.nn import functional as F
 class TargetCheckpoint:
     history: list[int]
     states: dict[int, tuple[torch.Tensor, torch.Tensor]]
+    packed: tuple[object, int] | None = None
 
 
 class MiniSGLTarget:
@@ -247,6 +248,11 @@ class MiniSGLTarget:
         if snapshot is None:
             raise ValueError("Rollback requires a checkpoint")
         with torch.cuda.stream(self.engine.stream):
+            if snapshot.packed is not None:
+                group, row = snapshot.packed
+                if not group.copier.matches(self.gdn._runtime):
+                    raise ValueError("GDN state allocations changed since checkpoint")
+                group.copier.restore(group, [self.slot], [row])
             for lid, (conv, ssm) in snapshot.states.items():
                 self.gdn._runtime[lid].conv_cache[self.slot].copy_(conv)
                 self.gdn._runtime[lid].ssm_cache[self.slot].copy_(ssm)

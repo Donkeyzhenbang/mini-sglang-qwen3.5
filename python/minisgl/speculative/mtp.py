@@ -486,8 +486,9 @@ def propose_mtp_batch(items, embedding: torch.Tensor, head: torch.Tensor):
             caches=active_caches,
             commit=False,
         )
+        predictions = logits.argmax(-1).tolist()
         for row, index in enumerate(active):
-            proposals[index].append(int(logits[row].argmax()))
+            proposals[index].append(predictions[row])
             last_hidden[index] = hidden[row]
             caches[index] = new_caches[row]
     return proposals

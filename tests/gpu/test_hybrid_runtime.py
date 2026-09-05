@@ -233,3 +233,43 @@ def test_selective_journal_replay_matches_compacted_prefixes(lengths):
     torch.testing.assert_close(actual[indices], expected, rtol=0, atol=0)
     torch.testing.assert_close(conv, ref_conv, rtol=0, atol=0)
     torch.testing.assert_close(ssm, ref_ssm, rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("width", [133, 524288])
+def test_fused_layer_state_copy_preserves_slots_and_snapshot_lifetimes(width):
+    from types import SimpleNamespace
+
+    from minisgl.kernel.triton.state_copy import LayerStateCopier
+
+    torch.manual_seed(519)
+    runtime = {
+        layer: SimpleNamespace(
+            conv_cache=torch.randn(5, 17, 3, device="cuda", dtype=torch.bfloat16),
+            ssm_cache=torch.randn(5, width, device="cuda"),
+        )
+        for layer in range(4)
+    }
+    expected = {k: (v.conv_cache.clone(), v.ssm_cache.clone()) for k, v in runtime.items()}
+    copier = LayerStateCopier(runtime)
+    snapshot = copier.checkpoint([4, 0, 2])
+    # A second checkpoint must not overwrite an outstanding first snapshot.
+    for rt in runtime.values():
+        rt.conv_cache.add_(4)
+        rt.ssm_cache.add_(4)
+    second = copier.checkpoint([1, 3])
+    for rt in runtime.values():
+        rt.conv_cache.zero_()
+        rt.ssm_cache.zero_()
+    copier.restore(snapshot, [2, 4], [2, 0])
+    copier.restore(second, [3], [1])
+    assert copier.matches(runtime)
+    for lid, rt in runtime.items():
+        for actual, initial in zip((rt.conv_cache, rt.ssm_cache), expected[lid]):
+            want = torch.zeros_like(actual)
+            want[2] = initial[2]
+            want[4] = initial[4]
+            want[3] = initial[3] + 4
+            torch.testing.assert_close(actual, want, rtol=0, atol=0)
+    # Catch relocation: a pointer table cannot be reused after the runtime changes.
+    runtime[0].conv_cache = runtime[0].conv_cache.clone()
+    assert not copier.matches(runtime)

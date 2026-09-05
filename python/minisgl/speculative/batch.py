@@ -313,9 +313,24 @@ class BatchedTargetExecutor:
 
     @torch.inference_mode()
     def checkpoint(self, targets):
+        from minisgl.kernel.triton.state_copy import LayerStateCopier
+
         from .target import TargetCheckpoint
 
         with torch.cuda.stream(self.engine.stream):
+            runtime = self.engine.attn_backend.gdn_backend._runtime
+            copier = getattr(self, "_state_copier", None)
+            if runtime and (copier is None or not copier.matches(runtime)):
+                try:
+                    copier = self._state_copier = LayerStateCopier(runtime)
+                except ValueError:
+                    copier = self._state_copier = None
+            if copier is not None and runtime:
+                snapshot = copier.checkpoint([t.slot for t in targets])
+                return [
+                    TargetCheckpoint(list(t.history), {}, (snapshot, i))
+                    for i, t in enumerate(targets)
+                ]
             slots = torch.tensor([t.slot for t in targets], device=self.engine.device)
             states = {
                 lid: (rt.conv_cache.index_select(0, slots), rt.ssm_cache.index_select(0, slots))
@@ -331,6 +346,25 @@ class BatchedTargetExecutor:
     @torch.inference_mode()
     def restore(self, items):
         with torch.cuda.stream(self.engine.stream):
+            groups = {}
+            legacy = []
+            for target, saved in items:
+                if saved.packed is None:
+                    legacy.append((target, saved))
+                    continue
+                snapshot, row = saved.packed
+                group = groups.setdefault(id(snapshot), (snapshot, [], []))
+                group[1].append(target.slot)
+                group[2].append(row)
+            for snapshot, slots, rows in groups.values():
+                if not snapshot.copier.matches(self.engine.attn_backend.gdn_backend._runtime):
+                    raise ValueError("GDN state allocations changed since checkpoint")
+                snapshot.copier.restore(snapshot, slots, rows)
+            for target, saved in items:
+                target.history = list(saved.history)
+            if not legacy:
+                return
+            items = legacy
             slots = torch.tensor([t.slot for t, _ in items], device=self.engine.device)
             for lid, rt in self.engine.attn_backend.gdn_backend._runtime.items():
                 rt.conv_cache.index_copy_(
