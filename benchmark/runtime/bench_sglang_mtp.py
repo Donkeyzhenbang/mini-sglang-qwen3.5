@@ -7,10 +7,12 @@ past EOS. All raw token IDs and speculative counters are retained.
 """
 
 import argparse
+import hashlib
 import importlib.metadata
 import json
 import os
 import statistics
+import subprocess
 import time
 from pathlib import Path
 
@@ -25,6 +27,8 @@ def main():
     parser.add_argument("--lengths", type=int, nargs="+", default=[256, 512])
     parser.add_argument("--batches", type=int, nargs="+", default=[1, 4])
     parser.add_argument("--repeats", type=int, default=3)
+    parser.add_argument("--warmup", type=int, default=1)
+    parser.add_argument("--context-length", type=int, default=2048)
     parser.add_argument("--eager", action="store_true")
     parser.add_argument("--overlap", action="store_true")
     parser.add_argument("--attention-backend", default="flashinfer")
@@ -63,7 +67,7 @@ def main():
         model_path=args.model,
         dtype="bfloat16",
         tp_size=1,
-        context_length=2048,
+        context_length=args.context_length,
         max_total_tokens=8192,
         max_running_requests=8,
         mem_fraction_static=0.75,
@@ -98,6 +102,8 @@ def main():
         },
         timing="Engine.generate wall time including prefill and IPC; warmup excluded",
         fixed_length_ignore_eos=True,
+        input_ids_sha256=hashlib.sha256(json.dumps(ids).encode()).hexdigest(),
+        benchmark_revision=subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
         cases=[],
     )
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -108,7 +114,8 @@ def main():
             for length in args.lengths:
                 params = dict(temperature=0.0, max_new_tokens=length, ignore_eos=True)
                 # Warm exactly this batch and output length before measuring.
-                engine.generate(input_ids=prompts, sampling_params=params)
+                for _ in range(args.warmup):
+                    engine.generate(input_ids=prompts, sampling_params=params)
                 samples = []
                 for repeat in range(args.repeats):
                     start = time.perf_counter()
