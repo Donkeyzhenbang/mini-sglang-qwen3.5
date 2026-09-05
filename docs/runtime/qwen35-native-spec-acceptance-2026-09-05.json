@@ -223,5 +223,60 @@
     "torch": "2.9.1+cu128",
     "python": "3.12.3",
     "tests_passed": 94
+  },
+  "reproduction_20260906": {
+    "target": "/root/autodl-tmp/runtime-results/reproduce-native-spec-20260906/target.json",
+    "target_metrics": {
+      "requests": 20,
+      "output_tokens": 5120,
+      "decode_tok_s": 328.0577759702908,
+      "e2e_tok_s": 326.07686376844504,
+      "wave_decode_min": 320.8872957078318,
+      "wave_decode_median": 329.3728622937744,
+      "wave_decode_max": 330.6455344152182,
+      "acceptance_rate": null,
+      "peak_allocated_gib": 8.687923908233643,
+      "peak_reserved_gib": 8.7421875
+    },
+    "candidates": {
+      "mtp3": {
+        "requests": 20,
+        "output_tokens": 5120,
+        "decode_tok_s": 427.13653098603265,
+        "e2e_tok_s": 423.7080353532305,
+        "wave_decode_min": 422.2758483622538,
+        "wave_decode_median": 427.106219439649,
+        "wave_decode_max": 431.3908348007666,
+        "acceptance_rate": 0.5898366606170599,
+        "peak_allocated_gib": 9.175641536712646,
+        "peak_reserved_gib": 9.369140625,
+        "exact_token_match": true,
+        "mismatches": [],
+        "decode_speedup": 1.3020161760308786,
+        "e2e_speedup": 1.2994115266458024
+      },
+      "dflash8": {
+        "requests": 20,
+        "output_tokens": 5120,
+        "decode_tok_s": 368.25521587752905,
+        "e2e_tok_s": 365.73806523184214,
+        "wave_decode_min": 366.77157040693305,
+        "wave_decode_median": 367.9264710804854,
+        "wave_decode_max": 370.6358711738705,
+        "acceptance_rate": 0.27295081967213114,
+        "peak_allocated_gib": 10.665783882141113,
+        "peak_reserved_gib": 11.439453125,
+        "exact_token_match": true,
+        "mismatches": [],
+        "decode_speedup": 1.1225315869692374,
+        "e2e_speedup": 1.1216314491161246
+      }
+    },
+    "passed": true
+  },
+  "reproduction_revisions": {
+    "target": "20b06d16d72074c7ac08406b2d970d53d9c20b6e",
+    "mtp3": "20b06d16d72074c7ac08406b2d970d53d9c20b6e",
+    "dflash8": "20b06d16d72074c7ac08406b2d970d53d9c20b6e"
   }
 }

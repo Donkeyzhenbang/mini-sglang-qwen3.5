@@ -168,3 +168,19 @@ python benchmark/runtime/compare_native_spec.py \
 多卡、HTTP 在线服务负载或任意输入都已完成验收。
 测试能证明这些路径通过回归，不能证明不存在任何潜在 bug。
 默认复现选择已经重复验收的 MTP-3 / DFlash block=8。
+
+
+## 2026-09-06 一键脚本独立复跑
+
+在干净的 `20b06d1` 上直接运行本报告中的脚本，完成三个独立进程、各五轮测试，
+自动验收 `passed: true`。没有手工改动输出 token 或计时结果。
+
+| 模式 | decode tok/s | 相对 target | E2E tok/s | token 对齐 |
+|---|---:|---:|---:|---|
+| target-only | 328.06 | 1.000× | 326.08 | 基准 |
+| MTP-3 | 427.14 | 1.302× | 423.71 | 20/20，5120 token |
+| DFlash block=8 | 368.26 | 1.123× | 365.74 | 20/20，5120 token |
+
+独立复跑结果位于
+`/root/autodl-tmp/runtime-results/reproduce-native-spec-20260906`。
+这是对已提交工具和代码的再次验证；上文 2026-09-05 表格保留原始数据。
