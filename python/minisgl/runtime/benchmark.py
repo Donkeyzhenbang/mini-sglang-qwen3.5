@@ -116,7 +116,13 @@ def main():
     p.add_argument(
         "--cuda-graph",
         action="store_true",
-        help="Capture target one-token decode only; draft/multi-token verify stay eager",
+        help="Capture target decode and uniform stable-numerics verify blocks",
+    )
+    p.add_argument(
+        "--verify-cuda-graph",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="With --cuda-graph, capture uniform stable verify blocks; disable for ablation",
     )
     p.add_argument(
         "--draft-context-kv-fusion",
@@ -319,6 +325,7 @@ def main():
                 taps,
                 batch_size,
                 cuda_graph=args.cuda_graph,
+                verify_cuda_graph=args.verify_cuda_graph,
                 target_numerics=args.target_numerics,
                 capture_final_hidden=capture_final_hidden,
             )

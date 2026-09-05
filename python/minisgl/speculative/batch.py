@@ -68,6 +68,7 @@ class BatchedTargetExecutor:
         cuda_graph=False,
         target_numerics="fast",
         capture_final_hidden=False,
+        verify_cuda_graph=True,
     ):
         from .numerics import configure_target_numerics
 
@@ -78,6 +79,8 @@ class BatchedTargetExecutor:
         self.decode_model = _DecodeModel(
             engine, taps, max_batch, target_numerics, capture_final_hidden
         )
+        self.verify_graphs = {}
+        self.verify_graph_enabled = cuda_graph and verify_cuda_graph and target_numerics == "stable"
         self.graph_enabled = cuda_graph
         self.batching = "wave"
         engine.attn_backend.gdn_backend.packed_verify_conv = True
@@ -105,6 +108,7 @@ class BatchedTargetExecutor:
             engine.attn_backend.gdn_backend._capture_active_bs = None
 
     def reset_stats(self):
+        self.verify_graph_replays = 0
         self.graph_replays = 0
         self.eager_decode_calls = 0
         self.eager_verify_calls = 0
@@ -125,7 +129,13 @@ class BatchedTargetExecutor:
             prefill="batched ragged suffixes; per-request cache restoration",
             draft="batched padded ragged contexts",
             cuda_graph_enabled=self.graph_enabled,
-            graph_scope="target one-token decode/sequential verify",
+            graph_scope=(
+                "target decode; uniform parallel verify (stable numerics)"
+                if self.verify_graph_enabled else "target one-token decode/sequential verify"
+            ),
+            verify_cuda_graph_enabled=self.verify_graph_enabled,
+            verify_graph_replays=self.verify_graph_replays,
+            captured_verify_shapes=[list(shape) for shape in self.verify_graphs],
             packed_gdn_verify_convolution=self.engine.attn_backend.gdn_backend.extend_backend
             == "packed",
             gdn_verify_state_journal=self.engine.attn_backend.gdn_backend.verify_state_journal,
@@ -189,7 +199,20 @@ class BatchedTargetExecutor:
                     attention_layers=self.engine.attention_layers,
                 ),
             ):
-                if decode and self.graph_enabled:
+                uniform_verify = (
+                    not decode and not prefill and self.verify_graph_enabled
+                    and len({len(tokens) for _, tokens in items}) == 1
+                    and len(items[0][1]) in (2, 4, 8, 16)
+                )
+                if uniform_verify:
+                    from .verify_graph import VerifyGraph
+
+                    key = (len(items), len(items[0][1]))
+                    if key not in self.verify_graphs:
+                        self.verify_graphs[key] = VerifyGraph(self, batch)
+                    logits, features = self.verify_graphs[key].replay(batch)
+                    self.verify_graph_replays += 1
+                elif decode and self.graph_enabled:
                     logits = self.engine.graph_runner.replay(batch).clone()
                     # Graph buffers are overwritten on the next replay. Features
                     # can outlive this call through draft context or rollback.
