@@ -22,13 +22,21 @@ class RMSNorm(nn.Module):
         self.eps = eps
 
     def forward(self, x):
+        if x.is_cuda:
+            from minisgl.kernel.triton.draft_ops import rms_norm
+
+            return rms_norm(x, self.weight, self.eps)
         y = x.float()
         return (y * torch.rsqrt(y.square().mean(-1, keepdim=True) + self.eps)).to(
             x.dtype
         ) * self.weight
 
 
-def rotary(x, positions, theta):
+def rotary(x, positions, theta, cache=None):
+    if cache is not None:
+        from minisgl.kernel.triton.draft_ops import cached_rotary
+
+        return cached_rotary(x, positions, cache)
     dim = x.shape[-1]
     inv = 1.0 / (theta ** (torch.arange(0, dim, 2, device=x.device, dtype=torch.float32) / dim))
     angles = positions.float()[..., None] * inv
@@ -73,6 +81,7 @@ class DraftAttention(nn.Module):
         self.window = c.get("sliding_window") if sliding else None
         self.causal = c.get("is_causal", sliding)
         self.theta = c.get("rope_parameters", {}).get("rope_theta", c.get("rope_theta", 10000.0))
+        self.rope_cache = None
         self.cached_k = self.cached_v = None
 
     def reset(self):
@@ -105,8 +114,8 @@ class DraftAttention(nn.Module):
         k = self.k_norm(split(torch.cat([context_k, query_k], dim=1), self.kv_heads))
         v = split(torch.cat([context_v, query_v], dim=1), self.kv_heads)
         positions = torch.arange(previous_context, target_length + count, device=x.device)
-        q = rotary(q, positions[-count:], self.theta)
-        k = rotary(k, positions, self.theta)
+        q = rotary(q, positions[-count:], self.theta, self.rope_cache)
+        k = rotary(k, positions, self.theta, self.rope_cache)
         context_count = context.shape[1]
         new_context_k, new_context_v = k[..., :context_count, :], v[..., :context_count, :]
         if self.cached_k is not None:
@@ -136,7 +145,12 @@ class DraftMLP(nn.Module):
         self.down_proj = nn.Linear(i, h, bias=False)
 
     def forward(self, x):
-        gate, up = self.gate_up_proj(x).split(self.intermediate_size, dim=-1)
+        packed = self.gate_up_proj(x)
+        if x.is_cuda:
+            from minisgl.kernel.triton.draft_ops import silu_mul
+
+            return self.down_proj(silu_mul(packed))
+        gate, up = packed.split(self.intermediate_size, dim=-1)
         return self.down_proj(F.silu(gate) * up)
 
 
@@ -208,7 +222,7 @@ class DFlashDraft(nn.Module):
         return projected.view(*projected.shape[:-1], len(self.layers), width)
 
     @classmethod
-    def from_directory(cls, folder, device, dtype, *, fuse_context_kv=True):
+    def from_directory(cls, folder, device, dtype, *, fuse_context_kv=True, max_position=None):
         from safetensors import safe_open
 
         folder = Path(folder)
@@ -248,6 +262,20 @@ class DFlashDraft(nn.Module):
         model.load_state_dict(weights, strict=True, assign=True)
         if fuse_context_kv:
             model.build_context_kv_fusion()
+        if max_position is not None and torch.device(device).type == "cuda":
+            caches = {}
+            for layer in model.layers:
+                attn = layer.self_attn
+                key = (attn.theta, attn.head_dim)
+                if key not in caches:
+                    positions = torch.arange(max_position, device=device, dtype=torch.float32)
+                    inv = 1.0 / (attn.theta ** (
+                        torch.arange(0, attn.head_dim, 2, device=device, dtype=torch.float32)
+                        / attn.head_dim
+                    ))
+                    angles = positions[:, None] * inv
+                    caches[key] = torch.cat([angles.cos(), angles.sin()], -1).to(dtype)
+                attn.rope_cache = caches[key]
         return model.eval()
 
     def reset(self):
@@ -263,6 +291,8 @@ class DFlashDraft(nn.Module):
         # The packed buffer is immutable and shared just like model weights.
         model.context_kv_weight = self.context_kv_weight
         model.context_kv_bias = self.context_kv_bias
+        for source, dest in zip(self.layers, model.layers):
+            dest.self_attn.rope_cache = source.self_attn.rope_cache
         return model.eval()
 
     def forward(self, context_features, noise_embeddings, target_length):

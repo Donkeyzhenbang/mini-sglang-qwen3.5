@@ -13,6 +13,10 @@ from minisgl.kernel.triton.state_copy import LayerStateCopier
 from minisgl.model_executor import ForwardBatch
 
 
+class _PersistentJournal(dict):
+    graph_owned = True
+
+
 class VerifyGraph:
     def __init__(self, executor, batch):
         self.executor, self.batch = executor, batch
@@ -42,6 +46,7 @@ class VerifyGraph:
         finally:
             self.copier.restore(saved, slots, list(range(len(slots))))
             self.gdn.cancel_verify_journal()
+        self.journal = _PersistentJournal(self.journal)
 
     def _body(self):
         self.gdn.begin_verify_journal()

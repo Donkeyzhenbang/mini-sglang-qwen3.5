@@ -75,6 +75,8 @@ class GDNAttnBackend:
         self.extend_backend = "recurrent"
         self.packed_verify_conv = False
         self.verify_state_journal = False
+        self._journal_graphs = {}
+        self.journal_graph_replays = 0
         self._verify_journal: Dict[int, _VerifyLayerJournal] | None = None
         self._pending_resets: set[int] = set()
         self._pending_restores: Dict[int, PrefixStateSnapshot] = {}
@@ -97,8 +99,7 @@ class GDNAttnBackend:
             return
         if not journal:
             raise RuntimeError("No packed GDN verify journal was captured")
-        from minisgl.kernel.triton.conv_extend import packed_conv_extend
-        from minisgl.kernel.triton.gdn_extend import packed_extend
+        from minisgl.kernel.triton.journal_graph import JournalReplayGraph, replay_journal
 
         requested = [(target.slot, count) for target, count in items]
         if any(count < 1 for _, count in requested):
@@ -123,35 +124,24 @@ class GDNAttnBackend:
             dtype=torch.int32,
             device=first.mixed_qkv.device,
         )
-        slots, starts_tensor, ends_tensor = metadata.unbind(0)
-        for layer_id, record in journal.items():
-            if (record.request_slots != first.request_slots
-                    or record.request_lengths != first.request_lengths):
+        for record in journal.values():
+            if (
+                record.request_slots != first.request_slots
+                or record.request_lengths != first.request_lengths
+            ):
                 raise RuntimeError("GDN journal layers have different request layouts")
-            runtime = self._runtime[layer_id]
-            conv_qkv = packed_conv_extend(
-                record.mixed_qkv,
-                record.conv_weight,
-                runtime.conv_cache,
-                slots,
-                starts_tensor,
-                end_offsets=ends_tensor,
-            )
-            packed_extend(
-                conv_qkv,
-                record.a,
-                record.b,
-                record.A_log,
-                record.dt_bias,
-                runtime.ssm_cache,
-                slots,
-                starts_tensor,
-                record.num_q_heads,
-                record.num_v_heads,
-                record.head_k_dim,
-                record.head_v_dim,
-                end_offsets=ends_tensor,
-            )
+        key = (id(journal), len(requested))
+        if getattr(journal, "graph_owned", False) and (
+            key in self._journal_graphs or len(self._journal_graphs) < 32
+        ):
+            if key not in self._journal_graphs:
+                self._journal_graphs[key] = JournalReplayGraph(
+                    journal, self._runtime, metadata, [slot for slot, _ in requested]
+                )
+            self._journal_graphs[key].replay(metadata)
+            self.journal_graph_replays += 1
+        else:
+            replay_journal(journal, self._runtime, metadata)
 
     def _get_prefix_node(self, handle: BaseCacheHandle) -> object | None:
         return getattr(handle, "node", None)

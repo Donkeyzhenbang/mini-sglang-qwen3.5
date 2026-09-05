@@ -119,6 +119,12 @@ def main():
         help="Capture target decode and uniform stable-numerics verify blocks",
     )
     p.add_argument(
+        "--draft-cuda-graph",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="With --cuda-graph, capture DFlash draft blocks using a persistent KV cache",
+    )
+    p.add_argument(
         "--verify-cuda-graph",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -217,6 +223,19 @@ def main():
             * 2
         )
         external += draft_fusion_buffer_bytes
+    draft_graph_cache_bytes = 0
+    if draft_config and args.cuda_graph and args.draft_cuda_graph:
+        draft_graph_cache_bytes = (
+            draft_config["num_hidden_layers"] * batch_size
+            * draft_config["num_key_value_heads"] * args.max_context
+            * draft_config["head_dim"] * 2 * 2
+        )
+        external += draft_graph_cache_bytes
+    # Shared BF16 cosine/sine table, reused by every DFlash layer and context.
+    draft_rope_cache_bytes = (
+        args.max_context * draft_config["head_dim"] * 2 if draft_config else 0
+    )
+    external += draft_rope_cache_bytes
     config = EngineConfig(
         model_path=args.model,
         tp_info=DistributedInfo(0, 1),
@@ -295,6 +314,7 @@ def main():
                 engine.device,
                 torch.bfloat16,
                 fuse_context_kv=args.draft_context_kv_fusion,
+                max_position=args.max_context,
             )
         elif capture_final_hidden:
             draft = Qwen3_5MTPDraft.from_directory(
@@ -326,6 +346,7 @@ def main():
                 batch_size,
                 cuda_graph=args.cuda_graph,
                 verify_cuda_graph=args.verify_cuda_graph,
+                draft_cuda_graph=args.draft_cuda_graph,
                 target_numerics=args.target_numerics,
                 capture_final_hidden=capture_final_hidden,
             )
@@ -462,6 +483,8 @@ def main():
             cache=cache.stats,
             cache_enabled=cache_enabled,
             draft_fusion_buffer_bytes=draft_fusion_buffer_bytes,
+            draft_graph_cache_bytes=draft_graph_cache_bytes,
+            draft_rope_cache_bytes=draft_rope_cache_bytes,
             native_mtp_steps=args.mtp_steps if capture_final_hidden else None,
             speculative_block_size=(
                 spec_block_size if args.mode != "target" else 1

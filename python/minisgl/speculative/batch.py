@@ -18,9 +18,7 @@ from torch.nn import functional as F
 
 
 class _DecodeModel:
-    def __init__(
-        self, engine, taps, max_batch, target_numerics, capture_final_hidden
-    ):
+    def __init__(self, engine, taps, max_batch, target_numerics, capture_final_hidden):
         self.engine, self.taps = engine, taps
         self.target_numerics = target_numerics
         self.capture_final_hidden = capture_final_hidden
@@ -42,9 +40,7 @@ class _DecodeModel:
         hidden = self.engine.model.model.forward(batch.input_ids, self.taps)
         if self.features is not None:
             captured = (
-                hidden
-                if self.capture_final_hidden
-                else self.engine.model.model._last_aux_hidden
+                hidden if self.capture_final_hidden else self.engine.model.model._last_aux_hidden
             )
             self.features[: batch.padded_size].copy_(captured)
         self.engine.model.model._last_aux_hidden = None
@@ -69,6 +65,7 @@ class BatchedTargetExecutor:
         target_numerics="fast",
         capture_final_hidden=False,
         verify_cuda_graph=True,
+        draft_cuda_graph=True,
     ):
         from .numerics import configure_target_numerics
 
@@ -79,6 +76,8 @@ class BatchedTargetExecutor:
         self.decode_model = _DecodeModel(
             engine, taps, max_batch, target_numerics, capture_final_hidden
         )
+        self.draft_graph_enabled = cuda_graph and draft_cuda_graph
+        self.dflash_graph_pool = None
         self.verify_graphs = {}
         self.verify_graph_enabled = cuda_graph and verify_cuda_graph and target_numerics == "stable"
         self.graph_enabled = cuda_graph
@@ -108,6 +107,9 @@ class BatchedTargetExecutor:
             engine.attn_backend.gdn_backend._capture_active_bs = None
 
     def reset_stats(self):
+        self.engine.attn_backend.gdn_backend.journal_graph_replays = 0
+        if self.dflash_graph_pool is not None:
+            self.dflash_graph_pool.replays = self.dflash_graph_pool.fallbacks = 0
         self.verify_graph_replays = 0
         self.graph_replays = 0
         self.eager_decode_calls = 0
@@ -127,11 +129,21 @@ class BatchedTargetExecutor:
             target_numerics=self.target_numerics,
             batching=self.batching,
             prefill="batched ragged suffixes; per-request cache restoration",
-            draft="batched padded ragged contexts",
+            draft="batched padded ragged contexts; DFlash CUDA graphs when enabled",
+            dflash_graph_replays=(self.dflash_graph_pool.replays if self.dflash_graph_pool else 0),
+            dflash_graph_fallbacks=(
+                self.dflash_graph_pool.fallbacks if self.dflash_graph_pool else 0
+            ),
+            captured_dflash_shapes=(
+                [list(shape) for shape in self.dflash_graph_pool.graphs]
+                if self.dflash_graph_pool
+                else []
+            ),
             cuda_graph_enabled=self.graph_enabled,
             graph_scope=(
                 "target decode; uniform parallel verify (stable numerics)"
-                if self.verify_graph_enabled else "target one-token decode/sequential verify"
+                if self.verify_graph_enabled
+                else "target one-token decode/sequential verify"
             ),
             verify_cuda_graph_enabled=self.verify_graph_enabled,
             verify_graph_replays=self.verify_graph_replays,
@@ -139,6 +151,8 @@ class BatchedTargetExecutor:
             packed_gdn_verify_convolution=self.engine.attn_backend.gdn_backend.extend_backend
             == "packed",
             gdn_verify_state_journal=self.engine.attn_backend.gdn_backend.verify_state_journal,
+            journal_graph_replays=self.engine.attn_backend.gdn_backend.journal_graph_replays,
+            captured_journal_shapes=len(self.engine.attn_backend.gdn_backend._journal_graphs),
             captured_batch_sizes=self.engine.graph_runner.graph_bs_list,
             graph_replays=self.graph_replays,
             eager_decode_calls=self.eager_decode_calls,
@@ -200,7 +214,9 @@ class BatchedTargetExecutor:
                 ),
             ):
                 uniform_verify = (
-                    not decode and not prefill and self.verify_graph_enabled
+                    not decode
+                    and not prefill
+                    and self.verify_graph_enabled
                     and len({len(tokens) for _, tokens in items}) == 1
                     and len(items[0][1]) in (2, 4, 8, 16)
                 )
@@ -223,9 +239,7 @@ class BatchedTargetExecutor:
                     )
                     self.graph_replays += 1
                 else:
-                    hidden = self.engine.model.model.forward(
-                        batch.input_ids, self.taps
-                    )
+                    hidden = self.engine.model.model.forward(batch.input_ids, self.taps)
                     features = (
                         hidden
                         if self.decode_model.capture_final_hidden
@@ -308,9 +322,7 @@ class BatchedTargetExecutor:
                     )
                     for t, d, _, size in items
                 ]
-                result = propose_mtp_batch(
-                    rows, items[0][0].embedding, items[0][0].head
-                )
+                result = propose_mtp_batch(rows, items[0][0].embedding, items[0][0].head)
             else:
                 from .batch_draft import propose_batch
 
@@ -324,9 +336,22 @@ class BatchedTargetExecutor:
                     )
                     for t, d, anchor, size in items
                 ]
-                result = propose_batch(
-                    rows, items[0][0].embedding, items[0][0].head
-                )
+                result = None
+                if self.draft_graph_enabled:
+                    from .draft_graph import DFlashGraphPool
+
+                    if self.dflash_graph_pool is None:
+                        self.dflash_graph_pool = DFlashGraphPool(
+                            rows[0][0],
+                            items[0][0].embedding,
+                            items[0][0].head,
+                            self.max_batch,
+                            self.engine.max_seq_len,
+                            self.engine.stream,
+                        )
+                    result = self.dflash_graph_pool.propose(rows, [t.slot for t, _, _, _ in items])
+                if result is None:
+                    result = propose_batch(rows, items[0][0].embedding, items[0][0].head)
             for t, _, _, _ in items:
                 t.pending_features.clear()
                 t.pending_next_tokens.clear()

@@ -85,8 +85,8 @@ def propose_batch(items, embedding, head):
             split(torch.cat([context_k, query_k], dim=1), attn.kv_heads)
         )
         v = split(torch.cat([context_v, query_v], dim=1), attn.kv_heads)
-        q = rotary(q, q_positions, attn.theta)
-        k = rotary(k, new_positions, attn.theta)
+        q = rotary(q, q_positions, attn.theta, attn.rope_cache)
+        k = rotary(k, new_positions, attn.theta, attn.rope_cache)
         old_counts = [s.cached_k.shape[-2] if s.cached_k is not None else 0 for s in states]
         old_width = max(old_counts)
         old_n = torch.tensor(old_counts, device=device)
