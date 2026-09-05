@@ -60,9 +60,7 @@ def generate_batch(
     decode_begin = time.perf_counter()
     mtp = bool(drafts and getattr(drafts[0], "draft_type", None) == "mtp")
     candidates = (
-        list(range(1, block_size + 1))
-        if mtp
-        else [b for b in (1, 2, 4, 8, 16) if b <= block_size]
+        list(range(1, block_size + 1)) if mtp else [b for b in (1, 2, 4, 8, 16) if b <= block_size]
     )
     while True:
         for i in list(live):
@@ -106,6 +104,7 @@ def generate_batch(
                 draft_ms=0.0,
                 restore_ms=0.0,
             )
+        setup_before = executor.setup_count() if hasattr(executor, "setup_count") else 0
         draft_ms = checkpoint_ms = 0.0
         if proposals:
             start = time.perf_counter()
@@ -166,6 +165,10 @@ def generate_batch(
                 executor.cancel_verify_states()
         targets[0].synchronize()
         replay_ms = (time.perf_counter() - start) * 1000
+        setup_after = executor.setup_count() if hasattr(executor, "setup_count") else 0
+        startup = setup_after != setup_before or (
+            bool(proposals) and getattr(executor, "last_draft_catchup", False)
+        )
         for i in active:
             progress = len(emitted[i])
             targets[live[i]].commit_features(features[i], progress)
@@ -176,7 +179,10 @@ def generate_batch(
             # Shared target costs are amortized; actual throughput uses wave
             # wall time, never a sum of overlapping request latencies.
             row.update(
-                accepted_draft=accepted[i], progress=progress, verify_ms=verify_ms / len(active)
+                startup=startup,
+                accepted_draft=accepted[i],
+                progress=progress,
+                verify_ms=verify_ms / len(active),
             )
             if i in replays:
                 row["restore_ms"] += replay_ms / len(replays)
@@ -191,6 +197,7 @@ def generate_batch(
                 draft_ms=draft_ms,
                 verify_ms=verify_ms,
                 restore_ms=checkpoint_ms + replay_ms,
+                startup=startup,
             )
         del snapshots, verified, features
     targets[0].synchronize()

@@ -60,11 +60,12 @@ def store_context(k, v, kc, vc, slots, previous, counts):
 
 
 class DFlashGraphPool:
-    def __init__(self, model, embedding, head, max_batch, max_context, stream):
+    def __init__(self, model, embedding, head, max_batch, max_context, stream, context_width=0):
         if stream == torch.cuda.default_stream(embedding.device):
             raise ValueError("DFlash graph capture requires the executor's non-default CUDA stream")
         self.model, self.embedding, self.head = model, embedding, head
         self.max_context, self.stream = max_context, stream
+        self.context_width = context_width
         attn = model.layers[0].self_attn
         shape = (len(model.layers), max_batch, attn.kv_heads, max_context, attn.head_dim)
         self.keys = torch.zeros(shape, device=embedding.device, dtype=embedding.dtype)
@@ -90,13 +91,15 @@ class DFlashGraphPool:
             self.fallbacks += 1
             return None
         width = next(iter(blocks))
-        new_width = max(width, 1 << (new_count - 1).bit_length())
+        new_width = max(self.context_width, width, 1 << (new_count - 1).bit_length())
         old_width = min(
             self.max_context,
             max(256, math.ceil(max(row[0].context_length for row in items) / 256) * 256),
         )
         key = (len(items), width, new_width, old_width)
-        if key not in self.graphs and len(self.graphs) >= 16:
+        if key not in self.graphs and (
+            len(self.graphs) >= 32 or torch.cuda.mem_get_info()[0] < 2 * 2**30
+        ):
             self.fallbacks += 1
             return None
 

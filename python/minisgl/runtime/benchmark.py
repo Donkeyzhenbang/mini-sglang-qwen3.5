@@ -347,6 +347,7 @@ def main():
                 cuda_graph=args.cuda_graph,
                 verify_cuda_graph=args.verify_cuda_graph,
                 draft_cuda_graph=args.draft_cuda_graph,
+                draft_graph_context_width=16 if args.mode == "adaptive" else 0,
                 target_numerics=args.target_numerics,
                 capture_final_hidden=capture_final_hidden,
             )

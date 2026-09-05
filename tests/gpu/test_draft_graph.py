@@ -86,7 +86,15 @@ def test_dflash_graph_reordering_reset_fallback_and_capacity_boundary(use_rope_c
     actual = [model.fork_context() for _ in range(4)]
     reference = [model.fork_context() for _ in range(4)]
     slots = [3, 0, 2, 1]
-    pool = DFlashGraphPool(model, embedding, embedding, 4, 512, torch.cuda.current_stream())
+    pool = DFlashGraphPool(
+        model,
+        embedding,
+        embedding,
+        4,
+        512,
+        torch.cuda.current_stream(),
+        context_width=16 if use_rope_cache else 0,
+    )
 
     def step(ids, counts, block):
         rows, oracle = [], []

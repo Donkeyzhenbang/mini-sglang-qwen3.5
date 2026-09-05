@@ -66,6 +66,7 @@ class BatchedTargetExecutor:
         capture_final_hidden=False,
         verify_cuda_graph=True,
         draft_cuda_graph=True,
+        draft_graph_context_width=0,
     ):
         from .numerics import configure_target_numerics
 
@@ -76,6 +77,7 @@ class BatchedTargetExecutor:
         self.decode_model = _DecodeModel(
             engine, taps, max_batch, target_numerics, capture_final_hidden
         )
+        self.draft_graph_context_width = draft_graph_context_width
         self.draft_graph_enabled = cuda_graph and draft_cuda_graph
         self.dflash_graph_pool = None
         self.verify_graphs = {}
@@ -122,6 +124,14 @@ class BatchedTargetExecutor:
         self.draft_batch_sizes = Counter()
         self.decode_batch_sizes = Counter()
         self.verify_batch_sizes = Counter()
+
+    def setup_count(self):
+        """Monotonic graph count, used to identify one-time setup observations."""
+        return (
+            len(self.verify_graphs)
+            + len(self.engine.attn_backend.gdn_backend._journal_graphs)
+            + (len(self.dflash_graph_pool.graphs) if self.dflash_graph_pool else 0)
+        )
 
     def stats(self):
         return dict(
@@ -308,6 +318,7 @@ class BatchedTargetExecutor:
 
     @torch.inference_mode()
     def propose(self, items):
+        self.last_draft_catchup = False
         with torch.cuda.stream(self.engine.stream):
             if getattr(items[0][1], "draft_type", "dflash") == "mtp":
                 from .mtp import propose_mtp_batch
@@ -336,6 +347,7 @@ class BatchedTargetExecutor:
                     )
                     for t, d, anchor, size in items
                 ]
+                self.last_draft_catchup = any(row[1].shape[1] > 16 for row in rows)
                 result = None
                 if self.draft_graph_enabled:
                     from .draft_graph import DFlashGraphPool
@@ -348,6 +360,7 @@ class BatchedTargetExecutor:
                             self.max_batch,
                             self.engine.max_seq_len,
                             self.engine.stream,
+                            context_width=self.draft_graph_context_width,
                         )
                     result = self.dflash_graph_pool.propose(rows, [t.slot for t, _, _, _ in items])
                 if result is None:

@@ -70,3 +70,19 @@ def test_memory_pressure_removes_large_blocks_and_checkpoint():
     assert budget.feasible_blocks([1], live_bytes=501, bytes_per_block_token=40) == []
     with pytest.raises(MemoryError):
         AdaptiveBlockController().choose(batch_size=1, context_len=1024, feasible_blocks=[])
+
+
+def test_adaptive_does_not_train_steady_cost_from_graph_startup():
+    from minisgl.runtime.adaptive import AdaptiveBlockController
+
+    c = AdaptiveBlockController((1, 4), exploration_interval=100)
+    c.observe(1, batch_size=4, context_len=100, progress=4, draft_ms=0, verify_ms=12)
+    assert c.choose(batch_size=4, context_len=100) == 4
+    c.observe(
+        4, batch_size=4, context_len=100, progress=10, draft_ms=1000, verify_ms=20, startup=True
+    )
+    # Retry the cold candidate rather than permanently rating its capture cost.
+    assert c.choose(batch_size=4, context_len=100) == 4
+    c.observe(4, batch_size=4, context_len=100, progress=10, draft_ms=6, verify_ms=12)
+    assert c.choose(batch_size=4, context_len=100) == 4
+    assert c.startup_observations == 1

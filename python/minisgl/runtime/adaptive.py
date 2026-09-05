@@ -23,6 +23,7 @@ class AdaptiveBlockController:
         self.alpha, self.exploration_interval = alpha, exploration_interval
         self.observations = {}
         self.rounds = 0
+        self.startup_observations = 0
 
     @staticmethod
     def bucket(batch_size: int, context_len: int):
@@ -40,12 +41,19 @@ class AdaptiveBlockController:
         draft_ms: float,
         verify_ms: float,
         restore_ms: float = 0,
+        startup: bool = False,
     ):
         values = (draft_ms, verify_ms, restore_ms)
         if block not in self.blocks or not 1 <= progress <= block * batch_size:
             raise ValueError("Invalid block progress")
         if any(v < 0 or not math.isfinite(v) for v in values):
             raise ValueError("Latency must be finite and nonnegative")
+        if startup:
+            # Graph compilation/capture and catching up an inactive draft are
+            # transition costs. Keep probing until a steady observation exists;
+            # callers still charge the full time to measured request latency.
+            self.startup_observations += 1
+            return
         cost = max(sum(values), 1e-6)
         key = (*self.bucket(batch_size, context_len), block)
         old = self.observations.get(key)
