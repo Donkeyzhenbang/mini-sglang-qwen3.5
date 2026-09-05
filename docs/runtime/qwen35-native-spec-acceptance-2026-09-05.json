@@ -1,0 +1,227 @@
+{
+  "fixed_256": {
+    "target": "/root/autodl-tmp/runtime-results/mtp-20260905/target-final.json",
+    "target_metrics": {
+      "requests": 20,
+      "output_tokens": 5120,
+      "decode_tok_s": 330.2328855319598,
+      "e2e_tok_s": 328.5277603657549,
+      "wave_decode_min": 328.66840912330656,
+      "wave_decode_median": 330.640763602213,
+      "wave_decode_max": 330.99364134742166,
+      "acceptance_rate": null,
+      "peak_allocated_gib": 8.687923908233643,
+      "peak_reserved_gib": 8.7421875
+    },
+    "candidates": {
+      "mtp3-accepted": {
+        "requests": 20,
+        "output_tokens": 5120,
+        "decode_tok_s": 427.3454171314628,
+        "e2e_tok_s": 423.7186661092206,
+        "wave_decode_min": 415.0194041223626,
+        "wave_decode_median": 429.69047956482683,
+        "wave_decode_max": 433.11394542755716,
+        "acceptance_rate": 0.5898366606170599,
+        "peak_allocated_gib": 9.175641536712646,
+        "peak_reserved_gib": 9.369140625,
+        "exact_token_match": true,
+        "mismatches": [],
+        "decode_speedup": 1.2940728675251951,
+        "e2e_speedup": 1.289749960969777
+      },
+      "mtp1-accepted": {
+        "requests": 20,
+        "output_tokens": 5120,
+        "decode_tok_s": 415.9422118576472,
+        "e2e_tok_s": 412.8732886633392,
+        "wave_decode_min": 412.7149668656328,
+        "wave_decode_median": 417.2379054067705,
+        "wave_decode_max": 417.7920165750007,
+        "acceptance_rate": 0.7936507936507936,
+        "peak_allocated_gib": 9.13638687133789,
+        "peak_reserved_gib": 9.28125,
+        "exact_token_match": true,
+        "mismatches": [],
+        "decode_speedup": 1.2595420688876016,
+        "e2e_speedup": 1.2567379030730346
+      },
+      "dflash-b4-accepted": {
+        "requests": 20,
+        "output_tokens": 5120,
+        "decode_tok_s": 344.66462793083514,
+        "e2e_tok_s": 342.62986736640937,
+        "wave_decode_min": 339.8736188064098,
+        "wave_decode_median": 345.48561468631885,
+        "wave_decode_max": 348.3486865464009,
+        "acceptance_rate": 0.47494033412887826,
+        "peak_allocated_gib": 10.595386981964111,
+        "peak_reserved_gib": 11.41015625,
+        "exact_token_match": true,
+        "mismatches": [],
+        "decode_speedup": 1.0437017118256644,
+        "e2e_speedup": 1.0429251609816912
+      },
+      "dflash-b8-journalgraph": {
+        "requests": 20,
+        "output_tokens": 5120,
+        "decode_tok_s": 370.53381011615795,
+        "e2e_tok_s": 368.22073428657467,
+        "wave_decode_min": 369.0546033794911,
+        "wave_decode_median": 370.2652760646639,
+        "wave_decode_max": 371.75209173492044,
+        "acceptance_rate": 0.27295081967213114,
+        "peak_allocated_gib": 10.665783882141113,
+        "peak_reserved_gib": 11.439453125,
+        "exact_token_match": true,
+        "mismatches": [],
+        "decode_speedup": 1.1220378900765102,
+        "e2e_speedup": 1.1208207607071896
+      }
+    },
+    "passed": true
+  },
+  "fixed_512": {
+    "target": "/root/autodl-tmp/runtime-results/mtp-20260905/target-512-v2.json",
+    "target_metrics": {
+      "requests": 12,
+      "output_tokens": 6144,
+      "decode_tok_s": 327.861021147048,
+      "e2e_tok_s": 326.9034251296418,
+      "wave_decode_min": 326.4484324462023,
+      "wave_decode_median": 328.5204050696621,
+      "wave_decode_max": 328.62343066527393,
+      "acceptance_rate": null,
+      "peak_allocated_gib": 8.687923908233643,
+      "peak_reserved_gib": 8.7421875
+    },
+    "candidates": {
+      "mtp3-512": {
+        "requests": 12,
+        "output_tokens": 6144,
+        "decode_tok_s": 437.55344935678085,
+        "e2e_tok_s": 435.79677267328054,
+        "wave_decode_min": 437.40225754132996,
+        "wave_decode_median": 437.49655382832833,
+        "wave_decode_max": 437.7616954245699,
+        "acceptance_rate": 0.6152416356877324,
+        "peak_allocated_gib": 9.178900718688965,
+        "peak_reserved_gib": 9.296875,
+        "exact_token_match": true,
+        "mismatches": [],
+        "decode_speedup": 1.3345698974094728,
+        "e2e_speedup": 1.3331055570936718
+      },
+      "dflash-b8-512": {
+        "requests": 12,
+        "output_tokens": 6144,
+        "decode_tok_s": 412.4107113414972,
+        "e2e_tok_s": 410.86567066962033,
+        "wave_decode_min": 408.646582381779,
+        "wave_decode_median": 414.05106009143213,
+        "wave_decode_max": 414.5870871989632,
+        "acceptance_rate": 0.31702367531003384,
+        "peak_allocated_gib": 10.649722576141357,
+        "peak_reserved_gib": 12.005859375,
+        "exact_token_match": true,
+        "mismatches": [],
+        "decode_speedup": 1.257882714751041,
+        "e2e_speedup": 1.2568411313117358
+      }
+    },
+    "passed": true
+  },
+  "ragged": {
+    "target": "/root/autodl-tmp/runtime-results/mtp-20260905/target-ragged.json",
+    "target_metrics": {
+      "requests": 12,
+      "output_tokens": 660,
+      "decode_tok_s": 144.32731454386825,
+      "e2e_tok_s": 144.1636365041907,
+      "wave_decode_min": 143.27332010417908,
+      "wave_decode_median": 144.4004608400255,
+      "wave_decode_max": 145.32277234531085,
+      "acceptance_rate": null,
+      "peak_allocated_gib": 8.687923908233643,
+      "peak_reserved_gib": 8.7421875
+    },
+    "candidates": {
+      "mtp-ragged": {
+        "requests": 12,
+        "output_tokens": 660,
+        "decode_tok_s": 210.59665257626747,
+        "e2e_tok_s": 208.0255090475658,
+        "wave_decode_min": 189.40730567401138,
+        "wave_decode_median": 222.04077067795313,
+        "wave_decode_max": 224.1179675516457,
+        "acceptance_rate": 0.5330634278002699,
+        "peak_allocated_gib": 9.100678443908691,
+        "peak_reserved_gib": 9.224609375,
+        "exact_token_match": true,
+        "mismatches": [],
+        "decode_speedup": 1.4591600574141956,
+        "e2e_speedup": 1.4429818371120149
+      },
+      "dflash-ragged": {
+        "requests": 12,
+        "output_tokens": 660,
+        "decode_tok_s": 184.71376279085348,
+        "e2e_tok_s": 183.7116944007432,
+        "wave_decode_min": 137.28073813312764,
+        "wave_decode_median": 207.35104578081229,
+        "wave_decode_max": 241.8810774643925,
+        "acceptance_rate": 0.22074159907300117,
+        "peak_allocated_gib": 10.557476997375488,
+        "peak_reserved_gib": 10.98828125,
+        "exact_token_match": true,
+        "mismatches": [],
+        "decode_speedup": 1.2798253980864431,
+        "e2e_speedup": 1.2743275548227648
+      }
+    },
+    "passed": true
+  },
+  "adaptive_256": {
+    "target": "/root/autodl-tmp/runtime-results/mtp-20260905/target-final.json",
+    "target_metrics": {
+      "requests": 20,
+      "output_tokens": 5120,
+      "decode_tok_s": 330.2328855319598,
+      "e2e_tok_s": 328.5277603657549,
+      "wave_decode_min": 328.66840912330656,
+      "wave_decode_median": 330.640763602213,
+      "wave_decode_max": 330.99364134742166,
+      "acceptance_rate": null,
+      "peak_allocated_gib": 8.687923908233643,
+      "peak_reserved_gib": 8.7421875
+    },
+    "candidates": {
+      "dflash-adaptive-bounded": {
+        "requests": 20,
+        "output_tokens": 5120,
+        "decode_tok_s": 356.5047974495786,
+        "e2e_tok_s": 354.3562756126982,
+        "wave_decode_min": 352.3065272562222,
+        "wave_decode_median": 355.13340403651256,
+        "wave_decode_max": 365.82747964965375,
+        "acceptance_rate": 0.22398641901338126,
+        "peak_allocated_gib": 11.027792930603027,
+        "peak_reserved_gib": 13.9296875,
+        "exact_token_match": true,
+        "mismatches": [],
+        "decode_speedup": 1.079555710738191,
+        "e2e_speedup": 1.0786189733804779
+      }
+    },
+    "passed": true
+  },
+  "environment": {
+    "gpu": "RTX 4090",
+    "model": "Qwen3.5-4B BF16",
+    "batch_size": 4,
+    "numerics": "stable greedy",
+    "torch": "2.9.1+cu128",
+    "python": "3.12.3",
+    "tests_passed": 94
+  }
+}

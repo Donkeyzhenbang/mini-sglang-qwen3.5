@@ -1,3 +1,5 @@
+> 更新：2026-09-05 原生 MTP/DFlash 已通过 batch=4 精度与加速验收，见 [最新 GPU 报告](qwen35-native-spec-acceptance-2026-09-05.md)。下文保留当时的阶段性结果。
+
 # Qwen3.5 投机解码与编译 Pass 优化技术报告
 
 日期：2026-09-03
