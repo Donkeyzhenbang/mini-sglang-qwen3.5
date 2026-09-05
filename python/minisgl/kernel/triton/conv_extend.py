@@ -10,12 +10,25 @@ import triton.language as tl
 
 
 @triton.jit
-def _conv_extend(X, W, STATE, SLOTS, CU, Y, D: tl.constexpr, K: tl.constexpr, TILE: tl.constexpr):
+def _conv_extend(
+    X,
+    W,
+    STATE,
+    SLOTS,
+    CU,
+    ENDS,
+    Y,
+    SELECTIVE: tl.constexpr,
+    D: tl.constexpr,
+    K: tl.constexpr,
+    TILE: tl.constexpr,
+):
     channel = tl.program_id(0) * TILE + tl.arange(0, TILE)
     req = tl.program_id(1)
     valid = channel < D
     slot = tl.load(SLOTS + req)
-    start, end = tl.load(CU + req), tl.load(CU + req + 1)
+    start = tl.load(CU + req)
+    end = tl.load(ENDS + req) if SELECTIVE else tl.load(CU + req + 1)
     hist = tl.arange(0, 4)
     state_mask = valid[:, None] & (hist[None, :] < K - 1)
     history = tl.load(
@@ -54,11 +67,21 @@ def _conv_extend(X, W, STATE, SLOTS, CU, Y, D: tl.constexpr, K: tl.constexpr, TI
     )
 
 
-def packed_conv_extend(x, weight, state, slots, cu):
-    if not all(t.is_cuda and t.is_contiguous() for t in (x, weight, state, slots, cu)):
+def packed_conv_extend(x, weight, state, slots, cu, *, end_offsets=None):
+    tensors = (x, weight, state, slots, cu)
+    if end_offsets is not None:
+        tensors += (end_offsets,)
+    if not all(t.is_cuda and t.is_contiguous() for t in tensors):
         raise ValueError("Packed convolution requires contiguous CUDA tensors")
     if weight.shape[-1] != 4 or state.shape[-1] != 3:
         raise ValueError("Packed convolution currently supports kernel width 4")
+    if len(cu) != len(slots) + int(end_offsets is None) or (
+        end_offsets is not None and len(end_offsets) != len(slots)
+    ):
+        raise ValueError("Packed sequence metadata mismatch")
+    metadata = (slots, cu) + (() if end_offsets is None else (end_offsets,))
+    if any(t.ndim != 1 or t.dtype not in (torch.int32, torch.int64) for t in metadata):
+        raise ValueError("Packed metadata must be one-dimensional integer tensors")
     out = torch.empty_like(x)
     _conv_extend[(triton.cdiv(x.shape[1], 128), len(slots))](
         x,
@@ -66,7 +89,9 @@ def packed_conv_extend(x, weight, state, slots, cu):
         state,
         slots,
         cu,
+        end_offsets if end_offsets is not None else cu,
         out,
+        SELECTIVE=end_offsets is not None,
         D=x.shape[1],
         K=4,
         TILE=128,

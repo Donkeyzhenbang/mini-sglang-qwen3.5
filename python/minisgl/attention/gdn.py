@@ -103,52 +103,54 @@ class GDNAttnBackend:
         requested = [(target.slot, count) for target, count in items]
         if any(count < 1 for _, count in requested):
             raise ValueError("Accepted verify prefixes must be non-empty")
+        first = next(iter(journal.values()))
+        row_for_slot = {slot: row for row, slot in enumerate(first.request_slots)}
+        offsets = [0]
+        for length in first.request_lengths:
+            offsets.append(offsets[-1] + length)
+        starts, ends = [], []
+        for slot, count in requested:
+            if slot not in row_for_slot:
+                raise RuntimeError(f"Slot {slot} is absent from the verify journal")
+            row = row_for_slot[slot]
+            start, end = offsets[row], offsets[row + 1]
+            if count > end - start:
+                raise ValueError("Accepted prefix exceeds the verified block")
+            starts.append(start)
+            ends.append(start + count)
+        metadata = torch.tensor(
+            [[slot for slot, _ in requested], starts, ends],
+            dtype=torch.int32,
+            device=first.mixed_qkv.device,
+        )
+        slots, starts_tensor, ends_tensor = metadata.unbind(0)
         for layer_id, record in journal.items():
-            row_for_slot = {slot: row for row, slot in enumerate(record.request_slots)}
-            offsets = [0]
-            for length in record.request_lengths:
-                offsets.append(offsets[-1] + length)
-            pieces_qkv, pieces_a, pieces_b, cu = [], [], [], [0]
-            for slot, count in requested:
-                if slot not in row_for_slot:
-                    raise RuntimeError(f"Slot {slot} is absent from the verify journal")
-                row = row_for_slot[slot]
-                start, end = offsets[row], offsets[row + 1]
-                if count > end - start:
-                    raise ValueError("Accepted prefix exceeds the verified block")
-                stop = start + count
-                pieces_qkv.append(record.mixed_qkv[start:stop])
-                pieces_a.append(record.a[start:stop])
-                pieces_b.append(record.b[start:stop])
-                cu.append(cu[-1] + count)
-            raw = torch.cat(pieces_qkv).contiguous()
-            a = torch.cat(pieces_a).contiguous()
-            b = torch.cat(pieces_b).contiguous()
-            slots = torch.tensor(
-                [slot for slot, _ in requested], dtype=torch.int32, device=raw.device
-            )
-            cu_tensor = torch.tensor(cu, dtype=torch.int32, device=raw.device)
+            if (record.request_slots != first.request_slots
+                    or record.request_lengths != first.request_lengths):
+                raise RuntimeError("GDN journal layers have different request layouts")
             runtime = self._runtime[layer_id]
             conv_qkv = packed_conv_extend(
-                raw,
+                record.mixed_qkv,
                 record.conv_weight,
                 runtime.conv_cache,
                 slots,
-                cu_tensor,
+                starts_tensor,
+                end_offsets=ends_tensor,
             )
             packed_extend(
-                conv_qkv.contiguous(),
-                a,
-                b,
+                conv_qkv,
+                record.a,
+                record.b,
                 record.A_log,
                 record.dt_bias,
                 runtime.ssm_cache,
                 slots,
-                cu_tensor,
+                starts_tensor,
                 record.num_q_heads,
                 record.num_v_heads,
                 record.head_k_dim,
                 record.head_v_dim,
+                end_offsets=ends_tensor,
             )
 
     def _get_prefix_node(self, handle: BaseCacheHandle) -> object | None:

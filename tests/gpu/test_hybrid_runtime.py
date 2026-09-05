@@ -186,3 +186,50 @@ def test_decode_convolution_matches_bf16_prefill_rounding():
         x, w, rt, torch.arange(4, device="cuda", dtype=torch.int32)
     )
     torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("lengths", [[1, 3], [4, 2], [0, 3]])
+def test_selective_journal_replay_matches_compacted_prefixes(lengths):
+    from minisgl.kernel.triton.conv_extend import packed_conv_extend
+    from minisgl.kernel.triton.gdn_extend import packed_extend
+
+    torch.manual_seed(113)
+    h, hv, k, v = 2, 4, 128, 128
+    d = 2 * h * k + hv * v
+    x = torch.randn(16, d, device="cuda", dtype=torch.bfloat16)
+    a, b = (torch.randn(16, hv, device="cuda", dtype=torch.bfloat16) for _ in range(2))
+    alog, dt = (torch.randn(hv, device="cuda", dtype=torch.bfloat16) for _ in range(2))
+    w = torch.randn(d, 1, 4, device="cuda", dtype=torch.bfloat16)
+    conv = torch.randn(5, d, 3, device="cuda", dtype=torch.bfloat16)
+    ssm = torch.randn(5, hv, v, k, device="cuda")
+    ref_conv, ref_ssm = conv.clone(), ssm.clone()
+    # Reordered requests, omitted full-accept requests, and a zero-length prefix.
+    starts = [12, 4]
+    ends = [start + n for start, n in zip(starts, lengths)]
+    indices = [i for start, end in zip(starts, ends) for i in range(start, end)]
+    meta = torch.tensor([[3, 1], starts, ends], device="cuda", dtype=torch.int32)
+    slots, cu = (
+        meta[0],
+        torch.tensor([0, lengths[0], sum(lengths)], device="cuda", dtype=torch.int32),
+    )
+    y = packed_conv_extend(x, w, conv, slots, meta[1], end_offsets=meta[2])
+    expected_y = packed_conv_extend(x[indices].contiguous(), w, ref_conv, slots, cu)
+    actual = packed_extend(y, a, b, alog, dt, ssm, slots, meta[1], h, hv, k, v, end_offsets=meta[2])
+    expected = packed_extend(
+        expected_y,
+        a[indices].contiguous(),
+        b[indices].contiguous(),
+        alog,
+        dt,
+        ref_ssm,
+        slots,
+        cu,
+        h,
+        hv,
+        k,
+        v,
+    )
+    torch.testing.assert_close(y[indices], expected_y, rtol=0, atol=0)
+    torch.testing.assert_close(actual[indices], expected, rtol=0, atol=0)
+    torch.testing.assert_close(conv, ref_conv, rtol=0, atol=0)
+    torch.testing.assert_close(ssm, ref_ssm, rtol=0, atol=0)

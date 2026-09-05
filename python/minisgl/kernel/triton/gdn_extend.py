@@ -19,7 +19,9 @@ def _extend_kernel(
     STATE,
     SLOTS,
     CU,
+    ENDS,
     OUT,
+    SELECTIVE: tl.constexpr,
     D: tl.constexpr,
     H: tl.constexpr,
     HV: tl.constexpr,
@@ -35,7 +37,8 @@ def _extend_kernel(
     vv = tile * BV + tl.arange(0, BV)
     mask = (vv[:, None] < V) & (kk[None, :] < K)
     slot = tl.load(SLOTS + req)
-    start, end = tl.load(CU + req), tl.load(CU + req + 1)
+    start = tl.load(CU + req)
+    end = tl.load(ENDS + req) if SELECTIVE else tl.load(CU + req + 1)
     if slot < 0:
         for token in range(start, end):
             tl.store(OUT + (token * HV + vh) * V + vv, 0.0, mask=vv < V)
@@ -77,14 +80,24 @@ def packed_extend(
     num_v_heads,
     head_k_dim,
     head_v_dim,
+    *,
+    end_offsets=None,
 ):
     tensors = (mixed_qkv, a, b, A_log, dt_bias, state, state_indices, cu_seqlens)
+    if end_offsets is not None:
+        tensors += (end_offsets,)
     if not all(t.is_cuda and t.is_contiguous() for t in tensors):
         raise ValueError("Packed extend requires contiguous CUDA tensors")
     if num_v_heads % num_q_heads or state.ndim != 4:
         raise ValueError("Invalid GDN head/state layout")
-    if len(cu_seqlens) != len(state_indices) + 1:
+    expected = len(state_indices) + int(end_offsets is None)
+    if len(cu_seqlens) != expected or (
+        end_offsets is not None and len(end_offsets) != len(state_indices)
+    ):
         raise ValueError("Packed sequence metadata mismatch")
+    metadata = (state_indices, cu_seqlens) + (() if end_offsets is None else (end_offsets,))
+    if any(t.ndim != 1 or t.dtype not in (torch.int32, torch.int64) for t in metadata):
+        raise ValueError("Packed metadata must be one-dimensional integer tensors")
     out = torch.empty(
         (len(mixed_qkv), num_v_heads, head_v_dim), device=mixed_qkv.device, dtype=mixed_qkv.dtype
     )
@@ -98,7 +111,9 @@ def packed_extend(
         state,
         state_indices,
         cu_seqlens,
+        end_offsets if end_offsets is not None else cu_seqlens,
         out,
+        SELECTIVE=end_offsets is not None,
         D=mixed_qkv.shape[1],
         H=num_q_heads,
         HV=num_v_heads,
