@@ -57,3 +57,16 @@ done
 "$PY" benchmark/runtime/compare_native_spec.py "$OUT/target-ragged.json" \
   "$OUT/mtp1-ragged.json" "$OUT/mtp3-ragged.json" "$OUT/dflash8-ragged.json" \
   --summary "$OUT/summary-ragged.json"
+# Independent prompts and longer prefills: correctness gate, not a steady-state SLO.
+for mode in target mtp3 dflash8; do
+  case "$mode" in
+    target) MODE=(--mode target);;
+    mtp3) MODE=(--mode mtp --mtp-steps 3);;
+    dflash8) MODE=(--mode fixed --draft "$DRAFT" --block-size 8);;
+  esac
+  run_case "$mode-diverse" --workload "$ROOT/benchmark/runtime/workloads/graph-regression8.jsonl" \
+    --repeat 1 "${MODE[@]}"
+done
+"$PY" benchmark/runtime/compare_native_spec.py "$OUT/target-diverse.json" \
+  "$OUT/mtp3-diverse.json" "$OUT/dflash8-diverse.json" --minimum-speedup 0 \
+  --summary "$OUT/summary-diverse.json"

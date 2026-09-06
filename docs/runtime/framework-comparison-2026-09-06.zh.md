@@ -2,6 +2,8 @@
 
 日期：2026-09-06。结论：MiniSGLang 原生 MTP-3、DFlash8 在本轮 batch=4 中均快于同框架 stable target；MTP-3 达到已安装 SGLang 0.5.9 MTP-3 吞吐的约 84%–91%，没有全面超过 SGLang。
 
+**版本提示：** 本文记录 MTP draft graph / DFlash 词表投影追加优化之前的横向实验。追加版本已完成 MTP draft graph，原生性能与精度见《MTP-Graph与DFlash-256优化-20260906.md》；SGLang 本轮未重跑，本文相对性能不能直接套用于新版本。
+
 收尾更新：后续已补测隔离的 SGLang DFlash PR #19952，并发现 RoPE/mask 配置问题，详见同目录《SGLang-DFlash补充与收尾-20260906.md》。下文“未测”描述本轮原始状态；正式新版仍未测，PR 实验版不能冒充正式版。
 
 ## 测试口径

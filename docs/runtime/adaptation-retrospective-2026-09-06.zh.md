@@ -2,6 +2,8 @@
 
 版本：2026-09-06。项目仓库：`Donkeyzhenbang/mini-sglang-qwen3.5`，分支 `feat/hybrid-memory-runtime`。本文整理 2026-08-30 至 2026-09-06 的代码审查、CPU/GPU 实验与提交记录；阶段性失败保留，不用最终结果覆盖历史问题。
 
+**追加更新：** 已完成 MTP draft 三步 CUDA Graph，以及 DFlash 非连续 hidden 词表投影的 GEMM 布局优化。干净提交复测 batch=4、256/512 输出下，MTP-3 相对 target 加速 44.5%/49.5%，DFlash-8 加速 24.2%/41.5%；结合混合长度补槽与八条新增独立 prompt，两者各 60 次请求、17,044 输出 token 对齐，96 项 CPU/GPU 回归通过。详细消融、profile 和复现见《MTP-Graph与DFlash-256优化-20260906.md》。下文旧阶段的性能数字和失败尝试保留为历史记录。
+
 项目目前已实现 MiniSGLang 原生 Qwen3.5-4B BF16 的 MTP-1/MTP-3、DFlash v1、真实 batch 执行、混合状态缓存和多条 CUDA Graph 路径。在已测单卡 4090、greedy、离线 batch=4 工作负载中，MTP-3 与 DFlash block=8 均已超过相同数值策略的 target-only，输出 token 完全一致。最新 SGLang 横向数据和本次重跑结果见同目录《SGLang横向对比-20260906.md》及机器可读证据。
 
 收尾补充：另完成 SGLang DFlash PR #19952 的 GPU 对照与配置修正消融。旧加载器把 checkpoint 的 RoPE theta=1e7 误读为默认 1e4，修正后接受率显著恢复；还补齐分层 attention 语义。完整数据与仍未通过的 PR 严格 token 一致性见《SGLang-DFlash补充与收尾-20260906.md》。正式新版 DFlash 仍未测，不与 PR 结论混淆。
@@ -17,7 +19,7 @@
 | Qwen3.5 target | 修复共享 GDN 状态池、前缀长度/快照生命周期、稀疏 KV 映射、显存预留；统一 decode/verify 数值路径 | 多模态、多卡与所有 attention 后端的完整验收 |
 | 混合缓存 | KV + conv + SSM + target features 等组成一致的前缀包；GPU/CPU 预算、同步 offload、恢复、LRU/cost 策略 | 完整 SGLang HiCache、异步预取、SSD、活跃序列分页卸载 |
 | 原生 DFlash | checkpoint 加载、八层 target taps、六层 draft、greedy verify、拒绝回滚、批量 draft、固定/自适应 block | DFlash2、随机采样分布验证 |
-| 原生 MTP | 加载 checkpoint 内训练好的 MTP 层；独立 KV、右移 token/hidden 对齐、递归三步 proposal | MTP draft 自身的完整 CUDA Graph |
+| 原生 MTP | 加载 checkpoint 内训练好的 MTP 层；独立 KV、右移 token/hidden 对齐、递归三步 proposal；追加完整三步 draft graph | 随机采样、所有形状的 graph 覆盖 |
 | 执行优化 | ragged prefill、批量前向、连续补槽实验入口；decode/verify/DFlash draft/GDN replay 图；Triton 融合 | 主 HTTP/overlap scheduler 的投机集成、线上 TPOT p99/SLO |
 | 评测 | token 对照、首次分歧、真实 wave wall time、分阶段成本、接受率、graph 计数、显存和版本证据 | 大规模质量榜单、统计置信区间、跨架构逐位保证 |
 
@@ -179,7 +181,7 @@ warmup/capture 会推进 live recurrent state。如果捕获后直接进入正�
 | RMSNorm、SiLU×Mul、RoPE Triton kernel | 减少细碎 launch 和中间张量 | 保留原 BF16 中间舍入；RoPE 的 BF16 products/cos 表及 padding 边界 |
 | MTP 批量 argmax 回传 | 从逐请求 `.item()` 改为每步一次 batch 回传 | 接受 token 不变，避免隐藏设备同步 |
 
-未实现的 fused LM-head+argmax、完整 MTP draft graph、通用 FX pass manager 属于后续候选，不能写成已落地。也没有以 Nsight 图作为本次全部结论的证据；现有归因主要基于分阶段计时、图计数、受控开关和独立 kernel/状态探针。
+未实现的 fused LM-head+argmax、通用 FX pass manager 属于后续候选，不能写成已落地。完整 MTP draft graph 已在追加优化中实现，见开头更新。早期归因主要基于分阶段计时、图计数、受控开关和独立 kernel/状态探针；追加阶段补充 PyTorch CPU/CUDA profiler trace，不表述为 Nsight 实验。
 
 一次 MTP batched recursive-KV packing 尝试虽然通过 5 个 CPU 测试，GPU 吞吐却降到约 255–270 tok/s，而当时 fast 基线约 313 tok/s，最终撤回。减少 Python 对象或看似更整齐的张量布局不必然降低真实设备成本，应保留负结果。
 
@@ -246,6 +248,6 @@ PYTHONPATH=$PWD/python OMP_NUM_THREADS=4 \
 
 脚本在独立进程依次测 target、MTP3、DFlash8，每个模式内部是真 batch=4；缓存关闭。`SHOW_TEXT=1` 可在日志显示 prompt/回答，JSON 始终保存 token 和文本。比较器检查输入、配置、模式、版本、wave 计数与逐 token 输出，不仅检查进程返回码。
 
-后续优先级：扩大独立 prompt 与上下文长度、明确 EOS/随机采样质量边界；补充 profiler timeline 和稳定单变量消融；在隔离兼容环境测 SGLang DFlash；再推进 MTP draft graph、LM-head/argmax 融合与 HTTP 调度集成。只有完成相应实验，才能扩展当前离线 greedy 性能结论。
+当前后续优先级：扩大独立 prompt 与上下文长度、明确 EOS/随机采样质量边界；推进 LM-head/argmax 融合与 HTTP 调度集成。隔离 SGLang DFlash PR 实验、MTP draft graph 和 DFlash profile 已在后续追加报告中完成。只有完成相应实验，才能扩展当前离线 greedy 性能结论。
 
 历史来源包括本地 `mini-sglang-qwen35-dflash-review.md`、`gpu-experiments-2026-08-31.md`、`full-batch-optimization-2026-08-31.md`、`stable_target_numerics.md`、`stable_target_results_2026-08-31.md`、`mtp-and-state-journal-results-2026-09-01.md`、`qwen35-speculative-pass-optimization-report-2026-09-03.md` 和 `native-spec-20260906-artifacts.tar.gz`。早期报告中的“未完成”是当时状态；本报告据后续验收更新，不改写原始记录。
