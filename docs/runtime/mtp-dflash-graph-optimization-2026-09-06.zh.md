@@ -135,7 +135,7 @@ bash benchmark/runtime/run_graph_opt_validation.sh \
   /root/autodl-tmp/runtime-results/graph-repro-$(date +%Y%m%d-%H%M%S)
 ```
 
-脚本依次测试 256/512 的 target、MTP-3、DFlash-8；256 的 DFlash-4/16；混合长度连续补槽的 target、MTP-1/3、DFlash-8。保存所有输入、输出 token、接受率、graph 计数、显存和比较摘要。各 GPU 测试串行启动，避免相互竞争。
+脚本依次测试 256/512 的 target、MTP-3、DFlash-8；256 的 DFlash-4/16；混合长度连续补槽的 target、MTP-1/3、DFlash-8；最后运行八条独立 prompt 的正确性回归。保存所有输入、输出 token、接受率、graph 计数、显存和比较摘要。各 GPU 测试串行启动，避免相互竞争。独立 prompt 回归只检查精度，不要求含新增图捕获的单轮结果满足稳态加速门槛。
 
 `--cuda-graph` 现在同时启用支持形状的 MTP draft graph；在同一 benchmark 命令上增加 `--no-draft-cuda-graph`，可仅关闭 draft graph，保留 target/verify/state graph 做消融。可单独用 `benchmark/runtime/probe_draft_head.py --model ... --output ...` 重现词表投影微基准。
 
