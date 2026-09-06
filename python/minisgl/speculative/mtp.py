@@ -111,7 +111,8 @@ class MTPAttention(nn.Module):
             flat_q = q.reshape(batch * width, -1).contiguous()
             flat_k = k.reshape(batch * width, -1).contiguous()
             apply_rope_with_cos_sin_cache_inplace(
-                positions=positions.reshape(-1),
+                # Ragged padding must not index beyond the RoPE table.
+                positions=torch.where(new_valid, positions, 0).reshape(-1),
                 query=flat_q,
                 key=flat_k,
                 head_size=self.head_dim,

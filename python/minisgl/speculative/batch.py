@@ -1,7 +1,7 @@
 """Batched prefill, draft and target verification for isolated request slots.
 
-All live requests share model forwards. CUDA graphs cover decode (one token per
-request), including sequential verification; multi-token verification is eager.
+All live requests share model forwards. CUDA graphs cover decode, uniform
+parallel verification, supported draft shapes and accepted GDN state replay.
 """
 
 from __future__ import annotations
@@ -80,6 +80,7 @@ class BatchedTargetExecutor:
         self.draft_graph_context_width = draft_graph_context_width
         self.draft_graph_enabled = cuda_graph and draft_cuda_graph
         self.dflash_graph_pool = None
+        self.mtp_graph_pool = None
         self.verify_graphs = {}
         self.verify_graph_enabled = cuda_graph and verify_cuda_graph and target_numerics == "stable"
         self.graph_enabled = cuda_graph
@@ -112,6 +113,8 @@ class BatchedTargetExecutor:
         self.engine.attn_backend.gdn_backend.journal_graph_replays = 0
         if self.dflash_graph_pool is not None:
             self.dflash_graph_pool.replays = self.dflash_graph_pool.fallbacks = 0
+        if self.mtp_graph_pool is not None:
+            self.mtp_graph_pool.replays = self.mtp_graph_pool.fallbacks = 0
         self.verify_graph_replays = 0
         self.graph_replays = 0
         self.eager_decode_calls = 0
@@ -131,6 +134,7 @@ class BatchedTargetExecutor:
             len(self.verify_graphs)
             + len(self.engine.attn_backend.gdn_backend._journal_graphs)
             + (len(self.dflash_graph_pool.graphs) if self.dflash_graph_pool else 0)
+            + (len(self.mtp_graph_pool.graphs) if self.mtp_graph_pool else 0)
         )
 
     def stats(self):
@@ -139,7 +143,10 @@ class BatchedTargetExecutor:
             target_numerics=self.target_numerics,
             batching=self.batching,
             prefill="batched ragged suffixes; per-request cache restoration",
-            draft="batched padded ragged contexts; DFlash CUDA graphs when enabled",
+            draft="batched ragged contexts; MTP chain/DFlash CUDA graphs when enabled",
+            mtp_graph_replays=(self.mtp_graph_pool.replays if self.mtp_graph_pool else 0),
+            mtp_graph_fallbacks=(self.mtp_graph_pool.fallbacks if self.mtp_graph_pool else 0),
+            captured_mtp_shapes=(list(self.mtp_graph_pool.graphs) if self.mtp_graph_pool else []),
             dflash_graph_replays=(self.dflash_graph_pool.replays if self.dflash_graph_pool else 0),
             dflash_graph_fallbacks=(
                 self.dflash_graph_pool.fallbacks if self.dflash_graph_pool else 0
@@ -333,7 +340,19 @@ class BatchedTargetExecutor:
                     )
                     for t, d, _, size in items
                 ]
-                result = propose_mtp_batch(rows, items[0][0].embedding, items[0][0].head)
+                self.last_draft_catchup = any(len(row[2]) > 16 for row in rows)
+                result = None
+                if self.draft_graph_enabled:
+                    from .mtp_graph import MTPGraphPool
+
+                    if self.mtp_graph_pool is None:
+                        self.mtp_graph_pool = MTPGraphPool(
+                            rows[0][0], items[0][0].embedding, items[0][0].head,
+                            self.max_batch, self.engine.max_seq_len, self.engine.stream,
+                        )
+                    result = self.mtp_graph_pool.propose(rows, [t.slot for t, _, _, _ in items])
+                if result is None:
+                    result = propose_mtp_batch(rows, items[0][0].embedding, items[0][0].head)
             else:
                 from .batch_draft import propose_batch
 

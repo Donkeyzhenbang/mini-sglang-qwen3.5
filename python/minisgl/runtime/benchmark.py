@@ -122,7 +122,7 @@ def main():
         "--draft-cuda-graph",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="With --cuda-graph, capture DFlash draft blocks using a persistent KV cache",
+        help="With --cuda-graph, capture DFlash blocks or MTP chains using persistent KV",
     )
     p.add_argument(
         "--verify-cuda-graph",
@@ -229,6 +229,14 @@ def main():
             draft_config["num_hidden_layers"] * batch_size
             * draft_config["num_key_value_heads"] * args.max_context
             * draft_config["head_dim"] * 2 * 2
+        )
+        external += draft_graph_cache_bytes
+    if capture_final_hidden and args.cuda_graph and args.draft_cuda_graph:
+        raw_mtp_config = json.loads((Path(args.model) / "config.json").read_text())
+        mtp_config = raw_mtp_config.get("text_config", raw_mtp_config)
+        draft_graph_cache_bytes = (
+            batch_size * mtp_config["num_key_value_heads"] * args.max_context
+            * mtp_config["head_dim"] * 2 * 2
         )
         external += draft_graph_cache_bytes
     # Shared BF16 cosine/sine table, reused by every DFlash layer and context.
