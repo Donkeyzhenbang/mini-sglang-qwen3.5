@@ -1,0 +1,820 @@
+{
+  "runtime_revision": "76e054e",
+  "gpu": "NVIDIA GeForce RTX 4090",
+  "tests": {
+    "passed": 96,
+    "command": "PYTHONPATH=python python -m pytest -o addopts='' tests/cpu tests/gpu -q"
+  },
+  "matrices": {
+    "256": {
+      "target": "/root/autodl-tmp/runtime-results/graph-opt-20260906/final/target-256.json",
+      "target_metrics": {
+        "requests": 20,
+        "output_tokens": 5120,
+        "decode_tok_s": 330.51483820015477,
+        "e2e_tok_s": 328.74932310976067,
+        "wave_decode_min": 330.1171984161202,
+        "wave_decode_median": 330.52733659461813,
+        "wave_decode_max": 331.1856560990845,
+        "acceptance_rate": null,
+        "peak_allocated_gib": 8.687923908233643,
+        "peak_reserved_gib": 8.7421875
+      },
+      "candidates": {
+        "mtp3-256": {
+          "requests": 20,
+          "output_tokens": 5120,
+          "decode_tok_s": 479.64575051547195,
+          "e2e_tok_s": 474.8870137425266,
+          "wave_decode_min": 473.46308912400883,
+          "wave_decode_median": 479.3552194038052,
+          "wave_decode_max": 484.3483761405661,
+          "acceptance_rate": 0.5898366606170599,
+          "peak_allocated_gib": 9.23847246170044,
+          "peak_reserved_gib": 10.0859375,
+          "exact_token_match": true,
+          "mismatches": [],
+          "decode_speedup": 1.451207918916505,
+          "e2e_speedup": 1.4445262099717677
+        },
+        "dflash8-256": {
+          "requests": 20,
+          "output_tokens": 5120,
+          "decode_tok_s": 411.5844892458455,
+          "e2e_tok_s": 408.43449746085844,
+          "wave_decode_min": 409.70807047925945,
+          "wave_decode_median": 411.48313833800216,
+          "wave_decode_max": 414.66026515517535,
+          "acceptance_rate": 0.27295081967213114,
+          "peak_allocated_gib": 10.665783882141113,
+          "peak_reserved_gib": 11.439453125,
+          "exact_token_match": true,
+          "mismatches": [],
+          "decode_speedup": 1.2452829394503497,
+          "e2e_speedup": 1.2423888621193997
+        }
+      },
+      "passed": true
+    },
+    "512": {
+      "target": "/root/autodl-tmp/runtime-results/graph-opt-20260906/final/target-512.json",
+      "target_metrics": {
+        "requests": 20,
+        "output_tokens": 10240,
+        "decode_tok_s": 326.9952210884667,
+        "e2e_tok_s": 326.0735160498127,
+        "wave_decode_min": 325.94938181454177,
+        "wave_decode_median": 327.1287337696467,
+        "wave_decode_max": 327.71158298508067,
+        "acceptance_rate": null,
+        "peak_allocated_gib": 8.687923908233643,
+        "peak_reserved_gib": 8.7421875
+      },
+      "candidates": {
+        "mtp3-512": {
+          "requests": 20,
+          "output_tokens": 10240,
+          "decode_tok_s": 490.0112781048722,
+          "e2e_tok_s": 487.61286877440926,
+          "wave_decode_min": 485.4313870739256,
+          "wave_decode_median": 491.43108465411996,
+          "wave_decode_max": 492.8765165002921,
+          "acceptance_rate": 0.6152416356877324,
+          "peak_allocated_gib": 9.230510234832764,
+          "peak_reserved_gib": 11.107421875,
+          "exact_token_match": true,
+          "mismatches": [],
+          "decode_speedup": 1.4985273377200288,
+          "e2e_speedup": 1.4954077677989615
+        },
+        "dflash8-512": {
+          "requests": 20,
+          "output_tokens": 10240,
+          "decode_tok_s": 463.638602290678,
+          "e2e_tok_s": 461.3542675098708,
+          "wave_decode_min": 458.7688196988472,
+          "wave_decode_median": 464.6434215975236,
+          "wave_decode_max": 467.22348599371924,
+          "acceptance_rate": 0.31702367531003384,
+          "peak_allocated_gib": 10.649722576141357,
+          "peak_reserved_gib": 12.005859375,
+          "exact_token_match": true,
+          "mismatches": [],
+          "decode_speedup": 1.4178757742922588,
+          "e2e_speedup": 1.4148780713591957
+        }
+      },
+      "passed": true
+    },
+    "blocks": {
+      "target": "/root/autodl-tmp/runtime-results/graph-opt-20260906/final/target-256.json",
+      "target_metrics": {
+        "requests": 20,
+        "output_tokens": 5120,
+        "decode_tok_s": 330.51483820015477,
+        "e2e_tok_s": 328.74932310976067,
+        "wave_decode_min": 330.1171984161202,
+        "wave_decode_median": 330.52733659461813,
+        "wave_decode_max": 331.1856560990845,
+        "acceptance_rate": null,
+        "peak_allocated_gib": 8.687923908233643,
+        "peak_reserved_gib": 8.7421875
+      },
+      "candidates": {
+        "dflash4-256": {
+          "requests": 20,
+          "output_tokens": 5120,
+          "decode_tok_s": 403.6162176967591,
+          "e2e_tok_s": 400.6187663483316,
+          "wave_decode_min": 401.94243171014716,
+          "wave_decode_median": 403.55988796462117,
+          "wave_decode_max": 405.2891878578953,
+          "acceptance_rate": 0.47494033412887826,
+          "peak_allocated_gib": 10.595386981964111,
+          "peak_reserved_gib": 11.41015625,
+          "exact_token_match": true,
+          "mismatches": [],
+          "decode_speedup": 1.2211742743372243,
+          "e2e_speedup": 1.218614726134586
+        },
+        "dflash16-256": {
+          "requests": 20,
+          "output_tokens": 5120,
+          "decode_tok_s": 389.7667140069124,
+          "e2e_tok_s": 387.017369120921,
+          "wave_decode_min": 389.27988681221103,
+          "wave_decode_median": 389.3623134546499,
+          "wave_decode_max": 390.9026434945574,
+          "acceptance_rate": 0.1351189286428143,
+          "peak_allocated_gib": 10.830216884613037,
+          "peak_reserved_gib": 11.91015625,
+          "exact_token_match": true,
+          "mismatches": [],
+          "decode_speedup": 1.1792714545870877,
+          "e2e_speedup": 1.1772415695338365
+        }
+      },
+      "passed": true
+    },
+    "ragged": {
+      "target": "/root/autodl-tmp/runtime-results/graph-opt-20260906/final/target-ragged.json",
+      "target_metrics": {
+        "requests": 12,
+        "output_tokens": 660,
+        "decode_tok_s": 108.35326519642534,
+        "e2e_tok_s": 109.82969918394798,
+        "wave_decode_min": 108.35326519642535,
+        "wave_decode_median": 108.35326519642535,
+        "wave_decode_max": 108.35326519642535,
+        "acceptance_rate": null,
+        "peak_allocated_gib": 8.687923908233643,
+        "peak_reserved_gib": 8.744140625
+      },
+      "candidates": {
+        "mtp1-ragged": {
+          "requests": 12,
+          "output_tokens": 660,
+          "decode_tok_s": 286.06546735055537,
+          "e2e_tok_s": 287.7443582696252,
+          "wave_decode_min": 286.0654673505553,
+          "wave_decode_median": 286.0654673505553,
+          "wave_decode_max": 286.0654673505553,
+          "acceptance_rate": 0.7833333333333333,
+          "peak_allocated_gib": 9.390045166015625,
+          "peak_reserved_gib": 9.873046875,
+          "exact_token_match": true,
+          "mismatches": [],
+          "decode_speedup": 2.6401185680188703,
+          "e2e_speedup": 2.619913924991248
+        },
+        "mtp3-ragged": {
+          "requests": 12,
+          "output_tokens": 660,
+          "decode_tok_s": 293.6761959499537,
+          "e2e_tok_s": 295.03291955901113,
+          "wave_decode_min": 293.6761959499537,
+          "wave_decode_median": 293.6761959499537,
+          "wave_decode_max": 293.6761959499537,
+          "acceptance_rate": 0.5303643724696356,
+          "peak_allocated_gib": 9.427966117858887,
+          "peak_reserved_gib": 9.96484375,
+          "exact_token_match": true,
+          "mismatches": [],
+          "decode_speedup": 2.710358524199253,
+          "e2e_speedup": 2.6862763146139192
+        },
+        "dflash8-ragged": {
+          "requests": 12,
+          "output_tokens": 660,
+          "decode_tok_s": 227.44445956379337,
+          "e2e_tok_s": 229.35291795630678,
+          "wave_decode_min": 227.44445956379337,
+          "wave_decode_median": 227.44445956379337,
+          "wave_decode_max": 227.44445956379337,
+          "acceptance_rate": 0.21363636363636362,
+          "peak_allocated_gib": 10.838465690612793,
+          "peak_reserved_gib": 11.326171875,
+          "exact_token_match": true,
+          "mismatches": [],
+          "decode_speedup": 2.099101112933484,
+          "e2e_speedup": 2.0882595478311896
+        }
+      },
+      "passed": true
+    },
+    "diverse": {
+      "target": "/root/autodl-tmp/runtime-results/graph-opt-20260906/target-diverse.json",
+      "target_metrics": {
+        "requests": 8,
+        "output_tokens": 1024,
+        "decode_tok_s": 316.38386480477317,
+        "e2e_tok_s": 225.0062865725318,
+        "wave_decode_min": 303.6166643318326,
+        "wave_decode_median": 316.9442970151462,
+        "wave_decode_max": 330.2719296984598,
+        "acceptance_rate": null,
+        "peak_allocated_gib": 8.839130878448486,
+        "peak_reserved_gib": 8.98046875
+      },
+      "candidates": {
+        "mtp3-diverse": {
+          "requests": 8,
+          "output_tokens": 1024,
+          "decode_tok_s": 407.1631045875935,
+          "e2e_tok_s": 364.967957183234,
+          "wave_decode_min": 349.77734678923446,
+          "wave_decode_median": 418.42582664282577,
+          "wave_decode_max": 487.0743064964171,
+          "acceptance_rate": 0.6588003933136677,
+          "peak_allocated_gib": 9.921806812286377,
+          "peak_reserved_gib": 10.5859375,
+          "exact_token_match": true,
+          "mismatches": [],
+          "decode_speedup": 1.2869275265944309,
+          "e2e_speedup": 1.6220344895367398
+        },
+        "dflash8-diverse": {
+          "requests": 8,
+          "output_tokens": 1024,
+          "decode_tok_s": 372.6738489246942,
+          "e2e_tok_s": 337.00702066596625,
+          "wave_decode_min": 328.84042467541383,
+          "wave_decode_median": 379.41532923410637,
+          "wave_decode_max": 429.99023379279885,
+          "acceptance_rate": 0.3336510962821735,
+          "peak_allocated_gib": 10.899133205413818,
+          "peak_reserved_gib": 11.794921875,
+          "exact_token_match": true,
+          "mismatches": [],
+          "decode_speedup": 1.17791673464339,
+          "e2e_speedup": 1.4977671326411164
+        }
+      },
+      "passed": true
+    },
+    "eager256": {
+      "target": "/root/autodl-tmp/runtime-results/graph-opt-20260906/final/target-256.json",
+      "target_metrics": {
+        "requests": 20,
+        "output_tokens": 5120,
+        "decode_tok_s": 330.51483820015477,
+        "e2e_tok_s": 328.74932310976067,
+        "wave_decode_min": 330.1171984161202,
+        "wave_decode_median": 330.52733659461813,
+        "wave_decode_max": 331.1856560990845,
+        "acceptance_rate": null,
+        "peak_allocated_gib": 8.687923908233643,
+        "peak_reserved_gib": 8.7421875
+      },
+      "candidates": {
+        "mtp3-eager-256": {
+          "requests": 20,
+          "output_tokens": 5120,
+          "decode_tok_s": 427.2626541435674,
+          "e2e_tok_s": 423.87523990555746,
+          "wave_decode_min": 425.0147190463458,
+          "wave_decode_median": 427.5868128272076,
+          "wave_decode_max": 428.39119103707304,
+          "acceptance_rate": 0.5898366606170599,
+          "peak_allocated_gib": 9.175641536712646,
+          "peak_reserved_gib": 9.369140625,
+          "exact_token_match": true,
+          "mismatches": [],
+          "decode_speedup": 1.292718525044929,
+          "e2e_speedup": 1.2893569966805278
+        }
+      },
+      "passed": true
+    },
+    "eager512": {
+      "target": "/root/autodl-tmp/runtime-results/graph-opt-20260906/final/target-512.json",
+      "target_metrics": {
+        "requests": 20,
+        "output_tokens": 10240,
+        "decode_tok_s": 326.9952210884667,
+        "e2e_tok_s": 326.0735160498127,
+        "wave_decode_min": 325.94938181454177,
+        "wave_decode_median": 327.1287337696467,
+        "wave_decode_max": 327.71158298508067,
+        "acceptance_rate": null,
+        "peak_allocated_gib": 8.687923908233643,
+        "peak_reserved_gib": 8.7421875
+      },
+      "candidates": {
+        "mtp3-eager-512": {
+          "requests": 20,
+          "output_tokens": 10240,
+          "decode_tok_s": 429.8126838777513,
+          "e2e_tok_s": 428.0816446384037,
+          "wave_decode_min": 428.7648794696565,
+          "wave_decode_median": 429.8923895155214,
+          "wave_decode_max": 431.3852682882686,
+          "acceptance_rate": 0.6152416356877324,
+          "peak_allocated_gib": 9.178900718688965,
+          "peak_reserved_gib": 9.296875,
+          "exact_token_match": true,
+          "mismatches": [],
+          "decode_speedup": 1.3144310869346556,
+          "e2e_speedup": 1.3128378220481043
+        }
+      },
+      "passed": true
+    }
+  },
+  "mtp3_correctness": {
+    "requests": 60,
+    "tokens": 17044,
+    "exact": true
+  },
+  "dflash8_correctness": {
+    "requests": 60,
+    "tokens": 17044,
+    "exact": true
+  },
+  "head_probe": {
+    "gpu": "NVIDIA GeForce RTX 4090",
+    "torch": "2.9.1+cu128",
+    "hidden_size": 2560,
+    "vocab_size": 248320,
+    "synthetic": true,
+    "cuda_graph": true,
+    "results": [
+      {
+        "batch": 1,
+        "block": 8,
+        "timings": {
+          "strided": {
+            "median_ms": 1.4796159863471985,
+            "samples_ms": [
+              1.5001599788665771,
+              1.4886080026626587,
+              1.481727957725525,
+              1.4816319942474365,
+              1.4807039499282837,
+              1.481727957725525,
+              1.4815679788589478,
+              1.4827519655227661,
+              1.4785280227661133,
+              1.4766080379486084,
+              1.4837759733200073,
+              1.4847999811172485,
+              1.431391954421997,
+              1.3691200017929077,
+              1.3666880130767822,
+              1.3660160303115845,
+              1.3660160303115845,
+              1.3670400381088257,
+              1.368064045906067,
+              1.3670400381088257
+            ]
+          },
+          "flat": {
+            "median_ms": 1.3669280409812927,
+            "samples_ms": [
+              1.3742079734802246,
+              1.3690240383148193,
+              1.3660160303115845,
+              1.3668479919433594,
+              1.3660160303115845,
+              1.3670400381088257,
+              1.3659520149230957,
+              1.3668800592422485,
+              1.3670400381088257,
+              1.3660160303115845,
+              1.3677760362625122,
+              1.3651200532913208,
+              1.3660160303115845,
+              1.366976022720337,
+              1.3670400381088257,
+              1.3689279556274414,
+              1.3660160303115845,
+              1.368064045906067,
+              1.3670400381088257,
+              1.365664005279541
+            ]
+          }
+        },
+        "top1_equal": 7,
+        "top1_total": 7,
+        "max_abs_logit_delta": 0.0
+      },
+      {
+        "batch": 2,
+        "block": 8,
+        "timings": {
+          "strided": {
+            "median_ms": 2.8620800971984863,
+            "samples_ms": [
+              2.8825600147247314,
+              2.8682239055633545,
+              2.866175889968872,
+              2.865151882171631,
+              2.8567678928375244,
+              2.8598079681396484,
+              2.861056089401245,
+              2.8577280044555664,
+              2.8631041049957275,
+              2.861056089401245,
+              2.854912042617798,
+              2.8723199367523193,
+              2.8692479133605957,
+              2.86080002784729,
+              2.861056089401245,
+              2.8835840225219727,
+              2.851840019226074,
+              2.8720319271087646,
+              2.865151882171631,
+              2.860032081604004
+            ]
+          },
+          "flat": {
+            "median_ms": 1.385472059249878,
+            "samples_ms": [
+              1.3946880102157593,
+              1.385472059249878,
+              1.3844159841537476,
+              1.385472059249878,
+              1.3861759901046753,
+              1.3844480514526367,
+              1.3834240436553955,
+              1.386240005493164,
+              1.3862080574035645,
+              1.3853759765625,
+              1.3875199556350708,
+              1.3824000358581543,
+              1.3875199556350708,
+              1.3833919763565063,
+              1.385472059249878,
+              1.3853759765625,
+              1.3834240436553955,
+              1.3844480514526367,
+              1.3864959478378296,
+              1.385472059249878
+            ]
+          }
+        },
+        "top1_equal": 14,
+        "top1_total": 14,
+        "max_abs_logit_delta": 0.0
+      },
+      {
+        "batch": 3,
+        "block": 8,
+        "timings": {
+          "strided": {
+            "median_ms": 4.295232057571411,
+            "samples_ms": [
+              4.30079984664917,
+              4.277088165283203,
+              4.2987518310546875,
+              4.305920124053955,
+              4.313920021057129,
+              4.290559768676758,
+              4.30079984664917,
+              4.273151874542236,
+              4.299776077270508,
+              4.295680046081543,
+              4.2639360427856445,
+              4.275199890136719,
+              4.317183971405029,
+              4.294784069061279,
+              4.289535999298096,
+              4.2690558433532715,
+              4.277247905731201,
+              4.2782721519470215,
+              4.2987518310546875,
+              4.323328018188477
+            ]
+          },
+          "flat": {
+            "median_ms": 1.4396799802780151,
+            "samples_ms": [
+              1.4510079622268677,
+              1.4393919706344604,
+              1.4407680034637451,
+              1.439743995666504,
+              1.4407680034637451,
+              1.4417279958724976,
+              1.4366719722747803,
+              1.4387199878692627,
+              1.4396159648895264,
+              1.4396159648895264,
+              1.4428160190582275,
+              1.4366719722747803,
+              1.4387199878692627,
+              1.4415359497070312,
+              1.4395519495010376,
+              1.4376959800720215,
+              1.4376959800720215,
+              1.4428160190582275,
+              1.4417920112609863,
+              1.4407680034637451
+            ]
+          }
+        },
+        "top1_equal": 21,
+        "top1_total": 21,
+        "max_abs_logit_delta": 0.0
+      },
+      {
+        "batch": 4,
+        "block": 8,
+        "timings": {
+          "strided": {
+            "median_ms": 5.695487976074219,
+            "samples_ms": [
+              5.708511829376221,
+              5.702655792236328,
+              5.696512222290039,
+              5.6893439292907715,
+              5.703680038452148,
+              5.693439960479736,
+              5.696224212646484,
+              5.6893439292907715,
+              5.688320159912109,
+              5.6912641525268555,
+              5.699520111083984,
+              5.701632022857666,
+              5.687295913696289,
+              5.688032150268555,
+              5.688255786895752,
+              5.695775985717773,
+              5.698495864868164,
+              5.694464206695557,
+              5.695199966430664,
+              5.700607776641846
+            ]
+          },
+          "flat": {
+            "median_ms": 1.4470720291137695,
+            "samples_ms": [
+              1.4551039934158325,
+              1.4489599466323853,
+              1.4475840330123901,
+              1.4489599466323853,
+              1.44486403465271,
+              1.44486403465271,
+              1.4438400268554688,
+              1.4446079730987549,
+              1.4438400268554688,
+              1.4497920274734497,
+              1.447808027267456,
+              1.4487040042877197,
+              1.4510079622268677,
+              1.4448319673538208,
+              1.4426239728927612,
+              1.4458880424499512,
+              1.44486403465271,
+              1.4478399753570557,
+              1.446560025215149,
+              1.4489599466323853
+            ]
+          }
+        },
+        "top1_equal": 28,
+        "top1_total": 28,
+        "max_abs_logit_delta": 0.0
+      }
+    ]
+  },
+  "profile": [
+    {
+      "variant": "before",
+      "total_kernel_ms": 2488.0059579999984,
+      "top_kernels": [
+        {
+          "name": "_linear",
+          "calls": 19278,
+          "total_ms": 1344.1553119999983
+        },
+        {
+          "name": "ampere_bf16_s16816gemm_bf16_128x64_ldg8_f2f_tn",
+          "calls": 83,
+          "total_ms": 442.9613549999999
+        },
+        {
+          "name": "_extend_kernel",
+          "calls": 5952,
+          "total_ms": 108.55552500000029
+        },
+        {
+          "name": "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x2_tn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x2_tn_align8::Params)",
+          "calls": 1198,
+          "total_ms": 80.30832500000008
+        },
+        {
+          "name": "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_32x32_64x1_tn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_32x32_64x1_tn_align8::Params)",
+          "calls": 544,
+          "total_ms": 72.97377499999999
+        },
+        {
+          "name": "_copy_slots",
+          "calls": 494,
+          "total_ms": 68.4312410000001
+        },
+        {
+          "name": "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x1_tn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x1_tn_align8::Params)",
+          "calls": 41,
+          "total_ms": 55.935627999999994
+        },
+        {
+          "name": "_attention",
+          "calls": 1008,
+          "total_ms": 33.53883499999999
+        },
+        {
+          "name": "_conv_extend",
+          "calls": 5928,
+          "total_ms": 30.245358999999613
+        },
+        {
+          "name": "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_32x32_128x2_tn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_32x32_128x2_tn_align8::Params)",
+          "calls": 468,
+          "total_ms": 25.205752000000004
+        },
+        {
+          "name": "kernel_cutlass_kernel_flashinfernormkernelsfused_add_rmsnormFusedAddRMSNormKernel_object_at__tensorptrbf16gmemalign128oi64256025601_tensorptrbf16gmemalign128oi64256025601_tensorptrbf16gme_0",
+          "calls": 8064,
+          "total_ms": 19.269389000000007
+        },
+        {
+          "name": "void cutlass::Kernel2<cutlass_80_tensorop_bf16_s16816gemm_relu_bf16_64x64_32x6_tn_align8>(cutlass_80_tensorop_bf16_s16816gemm_relu_bf16_64x64_32x6_tn_align8::Params)",
+          "calls": 469,
+          "total_ms": 18.610276000000006
+        },
+        {
+          "name": "void at::native::elementwise_kernel<128, 2, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1} const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1} const&)::{lambda(int)#1})",
+          "calls": 1488,
+          "total_ms": 13.96434400000005
+        },
+        {
+          "name": "ampere_bf16_s16816gemm_bf16_64x64_ldg8_f2f_stages_64x5_tn",
+          "calls": 468,
+          "total_ms": 13.307269999999992
+        },
+        {
+          "name": "void gemmSN_TN_kernel<float, 128, 16, 2, 4, 8, 9, false, cublasGemvTensorStridedBatched<float const>, cublasGemvTensorStridedBatched<float const>, cublasGemvTensorStridedBatched<float> >(cublasGemmSmallNParams<cublasGemvTensorStridedBatched<float const>, cublasGemvTensorStridedBatched<float const>, cublasGemvTensorStridedBatched<float>, float>)",
+          "calls": 744,
+          "total_ms": 11.942813000000013
+        }
+      ]
+    },
+    {
+      "variant": "after",
+      "total_kernel_ms": 2164.8281780000098,
+      "top_kernels": [
+        {
+          "name": "_linear",
+          "calls": 19278,
+          "total_ms": 1344.3800770000091
+        },
+        {
+          "name": "void cutlass::Kernel2<cutlass_80_tensorop_bf16_s16816gemm_relu_bf16_64x64_32x6_tn_align8>(cutlass_80_tensorop_bf16_s16816gemm_relu_bf16_64x64_32x6_tn_align8::Params)",
+          "calls": 547,
+          "total_ms": 131.2779649999999
+        },
+        {
+          "name": "_extend_kernel",
+          "calls": 5952,
+          "total_ms": 108.51094800000048
+        },
+        {
+          "name": "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x2_tn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x2_tn_align8::Params)",
+          "calls": 1198,
+          "total_ms": 80.293817
+        },
+        {
+          "name": "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_32x32_64x1_tn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_32x32_64x1_tn_align8::Params)",
+          "calls": 544,
+          "total_ms": 72.94919999999998
+        },
+        {
+          "name": "_copy_slots",
+          "calls": 494,
+          "total_ms": 68.472317
+        },
+        {
+          "name": "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x1_tn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x1_tn_align8::Params)",
+          "calls": 46,
+          "total_ms": 62.824504000000026
+        },
+        {
+          "name": "_attention",
+          "calls": 1008,
+          "total_ms": 33.516862999999994
+        },
+        {
+          "name": "_conv_extend",
+          "calls": 5928,
+          "total_ms": 30.275619999999673
+        },
+        {
+          "name": "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_32x32_128x2_tn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_32x32_128x2_tn_align8::Params)",
+          "calls": 468,
+          "total_ms": 25.207256000000015
+        },
+        {
+          "name": "kernel_cutlass_kernel_flashinfernormkernelsfused_add_rmsnormFusedAddRMSNormKernel_object_at__tensorptrbf16gmemalign128oi64256025601_tensorptrbf16gmemalign128oi64256025601_tensorptrbf16gme_0",
+          "calls": 8064,
+          "total_ms": 19.266464000000234
+        },
+        {
+          "name": "void at::native::elementwise_kernel<128, 2, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1} const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1} const&)::{lambda(int)#1})",
+          "calls": 1488,
+          "total_ms": 13.947450999999996
+        },
+        {
+          "name": "ampere_bf16_s16816gemm_bf16_64x64_ldg8_f2f_stages_64x5_tn",
+          "calls": 468,
+          "total_ms": 13.310845000000004
+        },
+        {
+          "name": "void gemmSN_TN_kernel<float, 128, 16, 2, 4, 8, 9, false, cublasGemvTensorStridedBatched<float const>, cublasGemvTensorStridedBatched<float const>, cublasGemvTensorStridedBatched<float> >(cublasGemmSmallNParams<cublasGemvTensorStridedBatched<float const>, cublasGemvTensorStridedBatched<float const>, cublasGemvTensorStridedBatched<float>, float>)",
+          "calls": 744,
+          "total_ms": 11.934591000000024
+        },
+        {
+          "name": "ampere_bf16_s16816gemm_bf16_128x64_ldg8_f2f_stages_64x3_tn",
+          "calls": 76,
+          "total_ms": 11.798584999999997
+        }
+      ]
+    }
+  ],
+  "trace_manifest": [
+    {
+      "path": "/root/autodl-tmp/runtime-results/graph-opt-20260906/dflash-trace.json",
+      "bytes": 120970907,
+      "sha256": "506825f5ce5ef63b49440200ceb61b91dbee1720f9943dcc7fa13ffa1509a8bc"
+    },
+    {
+      "path": "/root/autodl-tmp/runtime-results/graph-opt-20260906/profile-after/dflash-trace.json",
+      "bytes": 121098603,
+      "sha256": "89b3b8780a2310429f0914072d2e2c6c06da766b0988315b1b71ce6f4660f7a9"
+    }
+  ],
+  "telemetry": [
+    {
+      "file": "telemetry-before.csv",
+      "samples": 202,
+      "busy_samples": 68,
+      "temp_C": [
+        35.0,
+        57.0
+      ],
+      "sm_MHz": [
+        2685.0,
+        2700.0
+      ],
+      "mem_MHz": [
+        10251.0,
+        10251.0
+      ],
+      "power_W": [
+        96.34,
+        290.58
+      ]
+    },
+    {
+      "file": "telemetry-final.csv",
+      "samples": 337,
+      "busy_samples": 132,
+      "temp_C": [
+        45.0,
+        63.0
+      ],
+      "sm_MHz": [
+        2670.0,
+        2685.0
+      ],
+      "mem_MHz": [
+        10251.0,
+        10501.0
+      ],
+      "power_W": [
+        81.96,
+        353.24
+      ]
+    }
+  ]
+}
