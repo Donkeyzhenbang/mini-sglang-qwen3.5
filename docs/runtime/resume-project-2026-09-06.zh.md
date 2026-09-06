@@ -29,4 +29,6 @@
 
 9月5日受控验收曾测到 MTP 1.335×、DFlash 1.258× 的 decode 加速，9月6日干净脚本复跑在 256 输出下为 1.302× / 1.123×。可在面试补充说明，不能混用不同轮次/口径只挑最高值。
 
-不要写：完整 HiCache 移植、27B Int4 在 24GB 部署、DFlash2、SGLang DFlash 性能已测、全场景优于 SGLang、随机采样严格无损、HTTP 服务生产验收、通用编译 pass manager、已实现完整 MTP draft graph，或没有实际证据的 Nsight/C++ CUDA kernel 成果。
+收尾新增案例：在隔离的 SGLang DFlash PR 中，通过配置探针定位 RoPE theta 被旧加载器从 1e7 误读为默认 1e4；补齐分层 attention 语义并做 RoPE-only 消融，组合修正将接受率从约 14%/17% 提升到 27%/30%，吞吐相对原始 PR draft 提升约 27%/25%。该 PR 默认 BF16 未通过对 target 的严格 token 一致性，不能把这项写成无损加速成果。
+
+不要写：完整 HiCache 移植、27B Int4 在 24GB 部署、DFlash2、正式新版 SGLang DFlash 已完成验收、全场景优于 SGLang、随机采样严格无损、HTTP 服务生产验收、通用编译 pass manager、已实现完整 MTP draft graph，或没有实际证据的 Nsight/C++ CUDA kernel 成果。

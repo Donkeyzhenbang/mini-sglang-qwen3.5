@@ -4,6 +4,8 @@
 
 项目目前已实现 MiniSGLang 原生 Qwen3.5-4B BF16 的 MTP-1/MTP-3、DFlash v1、真实 batch 执行、混合状态缓存和多条 CUDA Graph 路径。在已测单卡 4090、greedy、离线 batch=4 工作负载中，MTP-3 与 DFlash block=8 均已超过相同数值策略的 target-only，输出 token 完全一致。最新 SGLang 横向数据和本次重跑结果见同目录《SGLang横向对比-20260906.md》及机器可读证据。
 
+收尾补充：另完成 SGLang DFlash PR #19952 的 GPU 对照与配置修正消融。旧加载器把 checkpoint 的 RoPE theta=1e7 误读为默认 1e4，修正后接受率显著恢复；还补齐分层 attention 语义。完整数据与仍未通过的 PR 严格 token 一致性见《SGLang-DFlash补充与收尾-20260906.md》。正式新版 DFlash 仍未测，不与 PR 结论混淆。
+
 这是一项推理系统工程与实验研究项目。当前证据不支持“完整移植 HiCache”“27B Int4 已部署”“DFlash2 已支持”“任意输入保证加速”或“生产服务零 bug”。
 
 ## 1. 项目起点与实际范围

@@ -1,4 +1,4 @@
-"""Isolated SGLang target/MTP comparison; does not import MiniSGLang.
+"""Isolated SGLang target/MTP/DFlash comparison; does not import MiniSGLang.
 
 Run each mode in a fresh process using the same environment. Timing includes
 prefill, decode and Engine IPC, but excludes model loading and graph capture.
@@ -22,8 +22,11 @@ def main():
     parser.add_argument("--model", required=True)
     parser.add_argument("--workload", required=True)
     parser.add_argument("--output", required=True)
-    parser.add_argument("--mode", choices=("target", "mtp"), required=True)
+    parser.add_argument("--mode", choices=("target", "mtp", "dflash"), required=True)
     parser.add_argument("--steps", type=int, default=1)
+    parser.add_argument("--draft")
+    parser.add_argument("--block-size", type=int, default=8)
+    parser.add_argument("--source-revision", help="Immutable revision when PYTHONPATH selects a source checkout")
     parser.add_argument("--lengths", type=int, nargs="+", default=[256, 512])
     parser.add_argument("--batches", type=int, nargs="+", default=[1, 4])
     parser.add_argument("--repeats", type=int, default=3)
@@ -35,6 +38,10 @@ def main():
     parser.add_argument("--deterministic", action="store_true")
     parser.add_argument("--fp32-lm-head", action="store_true")
     args = parser.parse_args()
+    if args.mode == "dflash" and not args.draft:
+        parser.error("--draft is required for DFlash")
+    if args.warmup < 0 or args.context_length < 1 or args.block_size < 2:
+        parser.error("Invalid warmup, context length, or block size")
     output = Path(args.output)
     if output.exists():
         parser.error("Use a fresh output path")
@@ -75,6 +82,7 @@ def main():
         disable_radix_cache=True,
         disable_overlap_schedule=not args.overlap,
         disable_cuda_graph=args.eager,
+        disable_piecewise_cuda_graph=True,
         cuda_graph_bs=[1, 2, 4, 8],
         chunked_prefill_size=1024,
         random_seed=42,
@@ -92,9 +100,21 @@ def main():
             speculative_eagle_topk=1,
             speculative_num_draft_tokens=args.steps + 1,
         )
+    if args.mode == "dflash":
+        kwargs.update(
+            speculative_algorithm="DFLASH",
+            speculative_draft_model_path=args.draft,
+            speculative_num_steps=1,
+            speculative_eagle_topk=1,
+            speculative_num_draft_tokens=args.block_size,
+            speculative_dflash_block_size=args.block_size,
+        )
     result = dict(
         arguments=vars(args),
         engine_arguments=kwargs,
+        imported_sglang_path=sgl.__file__,
+        imported_sglang_version=getattr(sgl, "__version__", None),
+        source_revision=args.source_revision,
         gpu=torch.cuda.get_device_name(),
         versions={
             p: importlib.metadata.version(p)
