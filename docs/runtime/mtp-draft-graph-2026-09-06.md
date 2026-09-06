@@ -20,7 +20,7 @@ disabled. End-to-end output throughput includes prefill:
 | --- | ---: | ---: |
 | Target | 328.68 | 1.000x |
 | MTP3 eager draft | 422.72 | 1.286x |
-| MTP3 graph draft | 481.77 | 1.466x |
+| MTP3 graph draft | 481.79 | 1.466x |
 
 All 20 measured requests / 5120 tokens match the stable target exactly. Draft
 acceptance remains 58.98%. Draft wall time across the five waves drops from

@@ -256,7 +256,12 @@ class _DFlashGraph:
                 self.counts,
             )
         hidden = model.norm(x)
-        logits = F.linear(hidden[:, 1:], pool.head) * opts.get("output_multiplier", 1.0)
+        # Removing the anchor creates a strided [batch, tokens, hidden] view.
+        # Flatten explicitly: F.linear on that view otherwise chooses batched
+        # GEMM and rereads the large shared vocabulary weight for each request.
+        selected = hidden[:, 1:].reshape(-1, hidden.shape[-1])
+        logits = F.linear(selected, pool.head).view(batch, width - 1, -1)
+        logits = logits * opts.get("output_multiplier", 1.0)
         cap = opts.get("final_logit_softcapping")
         if cap:
             logits = (logits / cap).tanh() * cap

@@ -121,7 +121,9 @@ def propose_batch(items, embedding, head):
                 ck, cv = ck[..., -attn.window :, :], cv[..., -attn.window :, :]
             state.cached_k, state.cached_v = ck.contiguous(), cv.contiguous()
     hidden = model.norm(x)
-    logits = F.linear(hidden[:, 1:], head) * opts.get("output_multiplier", 1.0)
+    selected = hidden[:, 1:].reshape(-1, hidden.shape[-1])
+    logits = F.linear(selected, head).view(count, width - 1, -1)
+    logits = logits * opts.get("output_multiplier", 1.0)
     cap = opts.get("final_logit_softcapping")
     if cap:
         logits = (logits / cap).tanh() * cap
