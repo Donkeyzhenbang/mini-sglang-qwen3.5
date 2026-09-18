@@ -100,9 +100,17 @@ class GDNAttnBackend:
         if not journal:
             raise RuntimeError("No packed GDN verify journal was captured")
         from minisgl.kernel.triton.journal_graph import JournalReplayGraph, replay_journal
+        from minisgl.kernel.triton.state_copy import validate_state_indices
 
         requested = [(target.slot, count) for target, count in items]
-        if any(count < 1 for _, count in requested):
+        capacity = min(rt.ssm_cache.shape[0] for rt in self._runtime.values())
+        validate_state_indices(
+            [slot for slot, _ in requested], capacity, unique=True, label="Journal slots"
+        )
+        if any(
+            not isinstance(count, int) or isinstance(count, bool) or count < 1
+            for _, count in requested
+        ):
             raise ValueError("Accepted verify prefixes must be non-empty")
         first = next(iter(journal.values()))
         row_for_slot = {slot: row for row, slot in enumerate(first.request_slots)}

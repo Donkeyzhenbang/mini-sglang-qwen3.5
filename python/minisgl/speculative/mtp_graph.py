@@ -12,6 +12,7 @@ import torch
 from torch.nn import functional as F
 
 from .draft_graph import store_context
+from .graph_contract import cache_import_required, validate_graph_requests
 
 
 class MTPGraphPool:
@@ -28,12 +29,7 @@ class MTPGraphPool:
         self.replays = self.fallbacks = 0
 
     def propose(self, items, slots):
-        if not items or len(items) != len(slots):
-            raise ValueError("MTP graph requires one slot per request")
-        if len(set(slots)) != len(slots) or len({id(r[0]) for r in items}) != len(items):
-            raise ValueError("MTP graph requires distinct slots and request contexts")
-        if any(s < 0 or s >= self.keys.shape[0] for s in slots):
-            raise ValueError("MTP graph slot out of range")
+        validate_graph_requests(items, slots, self.keys.shape[0])
         for draft, hidden, tokens, block, length in items:
             if draft.fc.weight.data_ptr() != self.model.fc.weight.data_ptr():
                 raise ValueError("MTP graph requests must share weights")
@@ -43,6 +39,10 @@ class MTPGraphPool:
                 hidden = hidden[0]
             if not tokens or hidden.shape != (len(tokens), self.embedding.shape[1]):
                 raise ValueError("MTP graph tokens and hidden states must align")
+            if hidden.dtype != self.embedding.dtype or hidden.device != self.embedding.device:
+                raise ValueError("MTP graph hidden dtype or device mismatch")
+            if draft.context_length < 0:
+                raise ValueError("MTP graph context length must be nonnegative")
             if draft.context_length + len(tokens) != length:
                 raise ValueError("MTP graph context length mismatch")
             if not 2 <= block <= draft.max_steps + 1 or length + block > self.max_context:
@@ -65,16 +65,15 @@ class MTPGraphPool:
         ):
             self.fallbacks += 1
             return None
+        imports = []
         for row, slot in zip(items, slots):
             draft = row[0]
             for source, dest in ((draft.cached_k, self.keys), (draft.cached_v, self.values)):
-                if source is None:
-                    if draft.context_length:
-                        raise ValueError("Missing confirmed MTP cache")
-                elif source.untyped_storage().data_ptr() != dest.untyped_storage().data_ptr():
-                    if source.shape[-2] != draft.context_length:
-                        raise ValueError("MTP cache length mismatch")
-                    dest[slot, :, :draft.context_length].copy_(source[0])
+                view = dest[slot : slot + 1, :, :draft.context_length]
+                if cache_import_required(source, view):
+                    imports.append((source, view))
+        for source, view in imports:
+            view.copy_(source)
         if shape not in self.graphs:
             self.graphs[shape] = _MTPGraph(self, shape, items, slots)
         predictions = self.graphs[shape].replay(items, slots)

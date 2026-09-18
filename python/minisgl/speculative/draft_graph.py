@@ -10,6 +10,7 @@ import triton.language as tl
 from torch.nn import functional as F
 
 from .draft import rotary
+from .graph_contract import cache_import_required, validate_graph_requests
 
 
 @triton.jit
@@ -76,11 +77,17 @@ class DFlashGraphPool:
 
     def propose(self, items, slots):
         model = self.model
+        validate_graph_requests(items, slots, self.keys.shape[1])
         for draft, features, _, block, length in items:
             if draft.fc.weight.data_ptr() != model.fc.weight.data_ptr():
                 raise ValueError("DFlash graph contexts must share weights")
-            if features.ndim != 3 or features.shape[0] != 1:
-                raise ValueError("DFlash graph requires one request per feature tensor")
+            if (features.ndim != 3 or features.shape[0] != 1 or features.shape[1] < 1
+                    or features.shape[2] != model.fc.in_features):
+                raise ValueError("DFlash graph requires nonempty, aligned request features")
+            if features.dtype != self.embedding.dtype or features.device != self.embedding.device:
+                raise ValueError("DFlash graph feature dtype or device mismatch")
+            if draft.context_length < 0:
+                raise ValueError("DFlash graph context length must be nonnegative")
             if draft.context_length + features.shape[1] != length:
                 raise ValueError("DFlash graph context length mismatch")
             if not 2 <= block <= model.block_size or length + block > self.max_context:
@@ -105,20 +112,18 @@ class DFlashGraphPool:
 
         # Eager prefill/fallback may have materialized an independent cache. Import
         # it once; graph requests thereafter retain views into our stable storage.
+        imports = []
         for row, slot in zip(items, slots):
             draft = row[0]
             for lid, layer in enumerate(draft.layers):
                 attn = layer.self_attn
                 for source, dest in ((attn.cached_k, self.keys), (attn.cached_v, self.values)):
-                    if source is None:
-                        if draft.context_length:
-                            raise ValueError("Missing confirmed DFlash cache")
-                        continue
-                    if source.untyped_storage().data_ptr() != dest.untyped_storage().data_ptr():
-                        count = source.shape[-2]
-                        dest[
-                            lid, slot, :, draft.context_length - count : draft.context_length
-                        ].copy_(source[0])
+                    start = max(0, draft.context_length - attn.window) if attn.window else 0
+                    view = dest[lid, slot : slot + 1, :, start : draft.context_length]
+                    if cache_import_required(source, view):
+                        imports.append((source, view))
+        for source, view in imports:
+            view.copy_(source)
         if key not in self.graphs:
             self.graphs[key] = _DFlashGraph(self, key, items, slots)
         tokens = self.graphs[key].replay(items, slots)

@@ -5,6 +5,50 @@ import torch.nn.functional as F
 pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires a CUDA GPU")
 
 
+def test_fused_draft_ops_accept_strided_inputs_and_weights():
+    from minisgl.kernel.triton.draft_ops import rms_norm, silu_mul
+
+    torch.manual_seed(918)
+    x = torch.randn(4, 512, device="cuda", dtype=torch.bfloat16)[:, 1::2]
+    weight = torch.randn(512, device="cuda", dtype=torch.bfloat16)[::2]
+    y = x.float()
+    expected = (y * torch.rsqrt(y.square().mean(-1, keepdim=True) + 1e-6)).to(x.dtype) * weight
+    torch.testing.assert_close(rms_norm(x, weight, 1e-6), expected, atol=0.015625, rtol=0.008)
+    gate, up = x.chunk(2, -1)
+    torch.testing.assert_close(silu_mul(x), F.silu(gate) * up, atol=0.015625, rtol=0.008)
+
+
+def test_rotary_strided_cache_padding_and_empty_launch():
+    from minisgl.kernel.triton.draft_ops import cached_rotary, rms_norm, silu_mul
+
+    torch.manual_seed(918)
+    x = torch.randn(2, 2, 3, 16, device="cuda", dtype=torch.bfloat16)
+    cache = torch.randn(8, 32, device="cuda", dtype=x.dtype)[:, ::2]
+    positions = torch.tensor([0, 3, 7], device="cuda")
+    table = cache[positions]
+    cos, sin = table.chunk(2, -1)
+    cos, sin = cos.repeat(1, 2), sin.repeat(1, 2)
+    rotated = torch.cat([-x[..., 8:], x[..., :8]], -1)
+    expected = x * cos + rotated * sin
+    torch.testing.assert_close(cached_rotary(x, positions, cache), expected, rtol=0, atol=0)
+    # Padding sentinels must never read outside the table, including under graph replay.
+    padding = torch.tensor([-1, 8, 99], device="cuda")
+    stream = torch.cuda.Stream()
+    stream.wait_stream(torch.cuda.current_stream())
+    with torch.cuda.stream(stream):
+        cached_rotary(x, padding, cache)
+        graph = torch.cuda.CUDAGraph()
+        with torch.cuda.graph(graph, stream=stream):
+            actual = cached_rotary(x, padding, cache)
+        graph.replay()
+    torch.cuda.current_stream().wait_stream(stream)
+    torch.testing.assert_close(actual, x, rtol=0, atol=0)
+    assert cached_rotary(x[:, :, :0], positions[:0], cache).shape == (2, 2, 0, 16)
+    empty = torch.empty(0, 16, device="cuda", dtype=x.dtype)
+    assert rms_norm(empty, torch.ones(16, device="cuda", dtype=x.dtype), 1e-6).shape == (0, 16)
+    assert silu_mul(empty).shape == (0, 8)
+
+
 @pytest.mark.parametrize("width", [128, 2560])
 def test_draft_fusions_match_bf16_reference(width):
     from minisgl.kernel.triton.draft_ops import rms_norm, silu_mul

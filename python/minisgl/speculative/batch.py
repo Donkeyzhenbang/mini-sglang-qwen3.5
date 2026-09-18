@@ -238,6 +238,13 @@ class BatchedTargetExecutor:
                     and len(items[0][1]) in (2, 4, 8, 16)
                 )
                 if uniform_verify:
+                    from .graph_contract import can_capture_graph
+
+                    key = (len(items), len(items[0][1]))
+                    uniform_verify = key in self.verify_graphs or can_capture_graph(
+                        self.verify_graphs, key, torch.cuda.mem_get_info()[0]
+                    )
+                if uniform_verify:
                     from .verify_graph import VerifyGraph
 
                     key = (len(items), len(items[0][1]))
