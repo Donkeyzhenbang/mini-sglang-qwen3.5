@@ -34,6 +34,9 @@ def main():
     parser.add_argument("--scope", choices=("wave", "all"), default="wave")
     parser.add_argument("--capture-wave", type=int, default=3)
     parser.add_argument("--manifest", required=True, type=Path)
+    parser.add_argument(
+        "--operators", action="store_true", help="Add diagnostic layer/operator/shape NVTX ranges"
+    )
     parser.add_argument("benchmark_args", nargs=argparse.REMAINDER)
     args = parser.parse_args()
     if args.capture_wave < 1:
@@ -90,6 +93,7 @@ def main():
         return result
 
     with (
+        ExitStack() as operator_stack,
         patch.object(loop, "generate_batch", wave),
         patch.object(Engine, "__init__", annotate("runtime/engine_init", Engine.__init__)),
         patch.object(
@@ -100,6 +104,10 @@ def main():
         patch.object(sys, "argv", ["minisgl.runtime.benchmark", *args.benchmark_args[1:]]),
         torch.cuda.nvtx.range("runtime/main"),
     ):
+        if args.operators:
+            from nsys_operators import operator_annotations
+
+            operator_stack.enter_context(operator_annotations())
         runpy.run_module("minisgl.runtime.benchmark", run_name="__main__")
     if not captured:
         raise RuntimeError(f"Requested wave {args.capture_wave}, but only {calls} ran")
@@ -114,6 +122,7 @@ def main():
                 "torch": torch.__version__,
                 "gpu": torch.cuda.get_device_name(),
                 "diagnostic_only": True,
+                "operator_annotations": args.operators,
                 "note": "NVTX + Nsight Systems only. Use separate unprofiled runs for throughput.",
             },
             indent=2,
