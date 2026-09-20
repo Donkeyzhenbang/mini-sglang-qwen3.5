@@ -307,10 +307,9 @@ class MiniSGLTarget:
 
     def feasible_blocks(self, context, blocks, batch_size=1):
         def admission():
-            allocated = torch.cuda.memory_allocated(self.device)
-            reserved = torch.cuda.memory_reserved(self.device)
-            free, _ = torch.cuda.mem_get_info(self.device)
-            available = min(free + reserved - allocated, self.budget_bytes - allocated)
+            stats = torch.cuda.memory_stats(self.device)
+            allocated = stats.get("allocated_bytes.all.current", 0)
+            reserved = stats.get("reserved_bytes.all.current", 0)
             state_bytes = sum(
                 t[self.slot].numel() * t.element_size()
                 for rt in self.gdn._runtime.values()
@@ -319,12 +318,24 @@ class MiniSGLTarget:
             vocab, hidden = self.embedding.shape
             # Conservative workspace proxy; peak measurements must calibrate it.
             per_token = 8 * vocab + 32 * hidden * self.embedding.element_size() + 384 * context
-            return JointMemoryBudget(self.budget_bytes, 0, self.safety_bytes).feasible_blocks(
-                blocks,
-                live_bytes=max(0, self.budget_bytes - available),
-                bytes_per_block_token=per_token * batch_size,
-                checkpoint_bytes=state_bytes * batch_size * (2 if self.executor else 1),
-            )
+            def fit(available):
+                return JointMemoryBudget(self.budget_bytes, 0, self.safety_bytes).feasible_blocks(
+                    blocks,
+                    live_bytes=max(0, self.budget_bytes - available),
+                    bytes_per_block_token=per_token * batch_size,
+                    checkpoint_bytes=state_bytes * batch_size * (2 if self.executor else 1),
+                )
+
+            # The allocator already owns these bytes: admitting solely from
+            # this lower bound needs no synchronizing driver free-memory query.
+            # If even one candidate needs new device memory, retain the full
+            # admission check (including the configured capacity and safety).
+            pooled = min(reserved - allocated, self.budget_bytes - allocated)
+            result = fit(pooled)
+            if len(result) == len(blocks):
+                return result
+            free, _ = torch.cuda.mem_get_info(self.device)
+            return fit(min(free + reserved - allocated, self.budget_bytes - allocated))
 
         result = admission()
         if self.cache and self.cache.used("gpu") and (not result or max(result) < max(blocks)):
