@@ -30,19 +30,25 @@ run_case() {
   echo "Running $label"
   "$PY" "${COMMON[@]}" "$@" --output "$OUT/$label.json" > "$OUT/$label.log" 2>&1
 }
+# Keep collecting independent gates after a comparison failure, but preserve
+# a failing exit code. Runtime exceptions still abort immediately under set -e.
+FAILED=0
+compare_case() {
+  "$PY" benchmark/runtime/compare_native_spec.py "$@" || FAILED=1
+}
 for length in 256 512; do
   INPUT=(--workload "$OUT/inputs-$length.jsonl" --repeat 5)
   run_case "target-$length" "${INPUT[@]}" --mode target
   run_case "mtp3-$length" "${INPUT[@]}" --mode mtp --mtp-steps 3
   run_case "dflash8-$length" "${INPUT[@]}" --mode fixed --draft "$DRAFT" --block-size 8
-  "$PY" benchmark/runtime/compare_native_spec.py "$OUT/target-$length.json" \
+  compare_case "$OUT/target-$length.json" \
     "$OUT/mtp3-$length.json" "$OUT/dflash8-$length.json" --summary "$OUT/summary-$length.json"
 done
 for block in 4 16; do
   run_case "dflash$block-256" --workload "$OUT/inputs-256.jsonl" --repeat 5 \
     --mode fixed --draft "$DRAFT" --block-size "$block"
 done
-"$PY" benchmark/runtime/compare_native_spec.py "$OUT/target-256.json" \
+compare_case "$OUT/target-256.json" \
   "$OUT/dflash4-256.json" "$OUT/dflash16-256.json" --summary "$OUT/summary-blocks.json"
 for mode in target mtp1 mtp3 dflash8; do
   case "$mode" in
@@ -54,7 +60,7 @@ for mode in target mtp1 mtp3 dflash8; do
   run_case "$mode-ragged" --workload "$OUT/inputs-ragged.jsonl" --repeat 1 \
     --continuous-batching "${MODE[@]}"
 done
-"$PY" benchmark/runtime/compare_native_spec.py "$OUT/target-ragged.json" \
+compare_case "$OUT/target-ragged.json" \
   "$OUT/mtp1-ragged.json" "$OUT/mtp3-ragged.json" "$OUT/dflash8-ragged.json" \
   --summary "$OUT/summary-ragged.json"
 # Independent prompts and longer prefills: correctness gate, not a steady-state SLO.
@@ -67,6 +73,8 @@ for mode in target mtp3 dflash8; do
   run_case "$mode-diverse" --workload "$ROOT/benchmark/runtime/workloads/graph-regression8.jsonl" \
     --repeat 1 "${MODE[@]}"
 done
-"$PY" benchmark/runtime/compare_native_spec.py "$OUT/target-diverse.json" \
+compare_case "$OUT/target-diverse.json" \
   "$OUT/mtp3-diverse.json" "$OUT/dflash8-diverse.json" --minimum-speedup 0 \
   --summary "$OUT/summary-diverse.json"
+
+exit "$FAILED"

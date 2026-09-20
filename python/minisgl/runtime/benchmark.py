@@ -426,8 +426,11 @@ def main():
                 sequential=args.verify_mode == "sequential",
             )
 
+        # A continuous run includes slot refills and their graph shapes. Warming
+        # only its first batch leaves later compilation/capture in measured time.
+        warmup_rows = rows if args.continuous_batching else rows[:batch_size]
         for _ in range(args.warmup):
-            wave(rows[:batch_size]) if executor else run(rows[0])
+            wave(warmup_rows) if executor else run(rows[0])
         cache.clear()
         cache.resize_gpu_budget(args.gpu_cache_mib << 20)
         # Warmup is excluded from controller history and reported counters.

@@ -10,6 +10,8 @@ from pathlib import Path
 
 def metrics(data):
     waves = data["waves"]
+    if any(w.get("profiled", False) for w in waves):
+        raise ValueError("Profiled waves are diagnostic; rerun without the profiler for throughput")
     seconds = sum(w["decode_ms"] for w in waves) / 1000
     total_seconds = sum(w["total_ms"] for w in waves) / 1000
     if seconds <= 0 or total_seconds <= 0:
