@@ -76,6 +76,7 @@ def test_paged_attention_is_causal_and_invariant_with_fp64_oracle(dim):
     torch.testing.assert_close(repeated, actual, rtol=0, atol=0)
 
 
+@torch.inference_mode()
 def test_attention_graph_replays_new_slots_and_context_lengths():
     from minisgl.kernel.triton.invariant import invariant_attention
 
